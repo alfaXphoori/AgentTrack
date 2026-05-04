@@ -50,11 +50,28 @@ type LogEntry struct {
 
 var config Config
 var dbPath string
+var appDir string
+
+func getAppDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current dir if home not found, though unlikely
+		return "."
+	}
+	dir := filepath.Join(home, ".aikore")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		os.MkdirAll(dir, 0755)
+	}
+	return dir
+}
 
 func loadConfig() {
+	appDir = getAppDir()
+	
+	// Default config
 	config = Config{
 		ProjectName:  "AiKore Activity Tracker",
-		DefaultModel: "unknown",
+		DefaultModel: "gemini-1.5-flash",
 		Timezone:     "Asia/Bangkok",
 		TokenEstimation: TokenEstimationConfig{
 			Enabled:       true,
@@ -70,13 +87,21 @@ func loadConfig() {
 		},
 	}
 
-	cwd, _ := os.Getwd()
-	configPath := filepath.Join(cwd, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, &config)
+	configPath := filepath.Join(appDir, "config.json")
+	
+	// Create default config file if it doesn't exist
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		data, _ := json.MarshalIndent(config, "", "  ")
+		os.WriteFile(configPath, data, 0644)
+	} else {
+		// Load existing config
+		data, err := os.ReadFile(configPath)
+		if err == nil {
+			json.Unmarshal(data, &config)
+		}
 	}
 
-	dbPath = filepath.Join(cwd, config.Storage.LogFile)
+	dbPath = filepath.Join(appDir, config.Storage.LogFile)
 }
 
 func initDb() {
@@ -294,6 +319,12 @@ func main() {
 	case "clear":
 		clearLogs()
 
+	case "info":
+		fmt.Printf("AiKore Global CLI\n")
+		fmt.Printf("App Directory: %s\n", appDir)
+		fmt.Printf("Config File:   %s\n", filepath.Join(appDir, "config.json"))
+		fmt.Printf("Log File:      %s\n", dbPath)
+
 	default:
 		printUsage()
 	}
@@ -302,9 +333,10 @@ func main() {
 func printUsage() {
 	fmt.Println("AiKore Activity Tracker (Go)")
 	fmt.Println("Usage:")
-	fmt.Println("  go run . log \"message\" [-c category]")
-	fmt.Println("  go run . auto \"question\" \"answer\" \"model\" \"tokens_in\" \"tokens_out\"")
-	fmt.Println("  go run . list")
-	fmt.Println("  go run . search \"keyword\"")
-	fmt.Println("  go run . clear")
+	fmt.Println("  aikore log \"message\" [-c category]")
+	fmt.Println("  aikore auto \"question\" \"answer\" \"model\" \"tokens_in\" \"tokens_out\"")
+	fmt.Println("  aikore list")
+	fmt.Println("  aikore search \"keyword\"")
+	fmt.Println("  aikore clear")
+	fmt.Println("  aikore info")
 }
