@@ -335,8 +335,68 @@ func main() {
 		}
 		exportLogs(format)
 
+	case "config":
+		if len(os.Args) > 3 && os.Args[2] == "set" {
+			updateConfig(os.Args[3], os.Args[4:])
+		} else {
+			showConfig()
+		}
+
 	default:
 		printUsage()
+	}
+}
+
+func showConfig() {
+	loadConfig()
+	data, _ := json.MarshalIndent(config, "", "  ")
+	fmt.Printf("Current Configuration (%s):\n", filepath.Join(appDir, "config.json"))
+	fmt.Println(string(data))
+}
+
+func updateConfig(key string, values []string) {
+	loadConfig()
+	if len(values) == 0 {
+		fmt.Println("Error: Missing value for config set.")
+		return
+	}
+	val := values[0]
+
+	switch strings.ToLower(key) {
+	case "model", "default_model":
+		config.DefaultModel = val
+	case "timezone":
+		config.Timezone = val
+	case "chars_per_token":
+		f, err := strconv.ParseFloat(val, 64)
+		if err == nil {
+			config.TokenEstimation.CharsPerToken = f
+		} else {
+			fmt.Printf("Error: Invalid number for chars_per_token: %v\n", err)
+			return
+		}
+	case "max_logs":
+		i, err := strconv.Atoi(val)
+		if err == nil {
+			config.Display.MaxLogsView = i
+		} else {
+			fmt.Printf("Error: Invalid number for max_logs: %v\n", err)
+			return
+		}
+	case "show_workspace":
+		config.Display.ShowWorkspace = (strings.ToLower(val) == "true")
+	default:
+		fmt.Printf("Error: Unknown config key: %s\n", key)
+		return
+	}
+
+	configPath := filepath.Join(appDir, "config.json")
+	data, _ := json.MarshalIndent(config, "", "  ")
+	err := os.WriteFile(configPath, data, 0644)
+	if err == nil {
+		fmt.Printf("Config updated: %s = %s\n", key, val)
+	} else {
+		fmt.Printf("Error saving config: %v\n", err)
 	}
 }
 
