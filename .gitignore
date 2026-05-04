@@ -1,0 +1,14 @@
+# AiKore Logs
+aikore_logs.json
+
+# Test backups
+*.bak
+
+# Go binaries
+*.exe
+
+# Node.js (Legacy)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
