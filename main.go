@@ -325,9 +325,87 @@ func main() {
 		fmt.Printf("Config File:   %s\n", filepath.Join(appDir, "config.json"))
 		fmt.Printf("Log File:      %s\n", dbPath)
 
+	case "stats":
+		showStats()
+
+	case "export":
+		format := "md"
+		if len(os.Args) > 2 {
+			format = os.Args[2]
+		}
+		exportLogs(format)
+
 	default:
 		printUsage()
 	}
+}
+
+func showStats() {
+	loadConfig()
+	logs := getLogs()
+	total := len(logs)
+	autoLogs := 0
+	manualLogs := 0
+	tIn := 0
+	tOut := 0
+
+	for _, log := range logs {
+		if log.Category == "AutoLog" {
+			autoLogs++
+		} else {
+			manualLogs++
+		}
+		tIn += log.TokensIn
+		tOut += log.TokensOut
+	}
+
+	fmt.Printf("AiKore Usage Statistics\n")
+	fmt.Println(strings.Repeat("-", 30))
+	fmt.Printf("Total Logs:     %d\n", total)
+	fmt.Printf("  - Auto:       %d\n", autoLogs)
+	fmt.Printf("  - Manual:     %d\n", manualLogs)
+	fmt.Printf("Total Tokens In:  %d\n", tIn)
+	fmt.Printf("Total Tokens Out: %d\n", tOut)
+	fmt.Printf("Total Tokens:     %d\n", tIn+tOut)
+}
+
+func exportLogs(format string) {
+	loadConfig()
+	logs := getLogs()
+	if len(logs) == 0 {
+		fmt.Println("No logs to export.")
+		return
+	}
+
+	if format != "md" {
+		fmt.Printf("Format '%s' not supported yet. Using 'md'.\n", format)
+		format = "md"
+	}
+
+	filename := fmt.Sprintf("aikore_export_%s.md", time.Now().Format("20060102_150405"))
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Printf("Error creating export file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	file.WriteString("# AiKore Activity Export\n\n")
+	file.WriteString(fmt.Sprintf("Exported on: %s\n\n", time.Now().Format(time.RFC1123)))
+
+	for _, log := range logs {
+		file.WriteString(fmt.Sprintf("## [%s] %s\n", log.Timestamp, log.Category))
+		if log.Category == "AutoLog" {
+			file.WriteString(fmt.Sprintf("**Model:** %s | **Tokens:** In=%d, Out=%d\n\n", log.Model, log.TokensIn, log.TokensOut))
+			file.WriteString(fmt.Sprintf("### Q: %s\n\n", log.Question))
+			file.WriteString(fmt.Sprintf("### A:\n%s\n\n", log.Answer))
+		} else {
+			file.WriteString(fmt.Sprintf("%s\n\n", log.Message))
+		}
+		file.WriteString("---\n\n")
+	}
+
+	fmt.Printf("Logs exported successfully to: %s\n", filename)
 }
 
 func printUsage() {
@@ -337,6 +415,8 @@ func printUsage() {
 	fmt.Println("  aikore auto \"question\" \"answer\" \"model\" \"tokens_in\" \"tokens_out\"")
 	fmt.Println("  aikore list")
 	fmt.Println("  aikore search \"keyword\"")
+	fmt.Println("  aikore stats")
+	fmt.Println("  aikore export [md]")
 	fmt.Println("  aikore clear")
 	fmt.Println("  aikore info")
 }
