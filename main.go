@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,8 @@ type DisplayConfig struct {
 }
 
 type StorageConfig struct {
-	LogFile string `json:"log_file"`
+	LogFilePrefix string `json:"log_file_prefix"`
+	Rotation      string `json:"rotation"` // "monthly", "none"
 }
 
 type Config struct {
@@ -49,13 +51,11 @@ type LogEntry struct {
 }
 
 var config Config
-var dbPath string
 var appDir string
 
 func getAppDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// Fallback to current dir if home not found, though unlikely
 		return "."
 	}
 	dir := filepath.Join(home, ".aikore")
@@ -67,8 +67,6 @@ func getAppDir() string {
 
 func loadConfig() {
 	appDir = getAppDir()
-	
-	// Default config
 	config = Config{
 		ProjectName:  "AiKore Activity Tracker",
 		DefaultModel: "gemini-1.5-flash",
@@ -83,47 +81,53 @@ func loadConfig() {
 			MaxLogsView:   50,
 		},
 		Storage: StorageConfig{
-			LogFile: "aikore_logs.json",
+			LogFilePrefix: "aikore_logs",
+			Rotation:      "monthly",
 		},
 	}
 
 	configPath := filepath.Join(appDir, "config.json")
-	
-	// Create default config file if it doesn't exist
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		data, _ := json.MarshalIndent(config, "", "  ")
 		os.WriteFile(configPath, data, 0644)
 	} else {
-		// Load existing config
 		data, err := os.ReadFile(configPath)
 		if err == nil {
 			json.Unmarshal(data, &config)
 		}
 	}
-
-	dbPath = filepath.Join(appDir, config.Storage.LogFile)
 }
 
-func initDb() {
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		os.WriteFile(dbPath, []byte("[]"), 0644)
+func getLogPath(t time.Time) string {
+	if config.Storage.Rotation == "monthly" {
+		return filepath.Join(appDir, fmt.Sprintf("%s_%s.json", config.Storage.LogFilePrefix, t.Format("2006_01")))
 	}
+	return filepath.Join(appDir, config.Storage.LogFilePrefix+".json")
 }
 
-func getLogs() []LogEntry {
-	initDb()
-	data, err := os.ReadFile(dbPath)
-	if err != nil {
-		return []LogEntry{}
+func getAllLogFiles() []string {
+	files, _ := filepath.Glob(filepath.Join(appDir, config.Storage.LogFilePrefix+"*.json"))
+	sort.Strings(files)
+	return files
+}
+
+func getLogsFromAllFiles() []LogEntry {
+	var allLogs []LogEntry
+	files := getAllLogFiles()
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err == nil {
+			var logs []LogEntry
+			json.Unmarshal(data, &logs)
+			allLogs = append(allLogs, logs...)
+		}
 	}
-	var logs []LogEntry
-	json.Unmarshal(data, &logs)
-	return logs
+	return allLogs
 }
 
-func saveLogs(logs []LogEntry) {
+func saveLogsToFile(path string, logs []LogEntry) {
 	data, _ := json.MarshalIndent(logs, "", "  ")
-	os.WriteFile(dbPath, data, 0644)
+	os.WriteFile(path, data, 0644)
 }
 
 func estimateTokens(text string) int {
@@ -135,14 +139,19 @@ func estimateTokens(text string) int {
 
 func addLog(entry LogEntry) {
 	loadConfig()
-	logs := getLogs()
-
-	loc, err := time.LoadLocation(config.Timezone)
-	if err != nil {
+	loc, _ := time.LoadLocation(config.Timezone)
+	if loc == nil {
 		loc = time.Local
 	}
 	now := time.Now().In(loc)
 	entry.Timestamp = now.Format("2006-01-02 15:04:05")
+
+	path := getLogPath(now)
+	var logs []LogEntry
+	data, err := os.ReadFile(path)
+	if err == nil {
+		json.Unmarshal(data, &logs)
+	}
 
 	if entry.Category == "" {
 		entry.Category = "General"
@@ -155,7 +164,7 @@ func addLog(entry LogEntry) {
 	}
 
 	logs = append(logs, entry)
-	saveLogs(logs)
+	saveLogsToFile(path, logs)
 
 	estStr := ""
 	if entry.IsEstimated {
@@ -166,7 +175,7 @@ func addLog(entry LogEntry) {
 
 func searchLogs(keyword string) {
 	loadConfig()
-	logs := getLogs()
+	logs := getLogsFromAllFiles()
 	keyword = strings.ToLower(keyword)
 	var found []LogEntry
 
@@ -229,7 +238,7 @@ func renderLogs(logs []LogEntry) {
 
 func listLogs() {
 	loadConfig()
-	logs := getLogs()
+	logs := getLogsFromAllFiles()
 	if len(logs) == 0 {
 		fmt.Println("No logs found.")
 		return
@@ -239,9 +248,11 @@ func listLogs() {
 
 func clearLogs() {
 	loadConfig()
-	initDb()
-	os.WriteFile(dbPath, []byte("[]"), 0644)
-	fmt.Println("Logs cleared.")
+	files := getAllLogFiles()
+	for _, file := range files {
+		os.WriteFile(file, []byte("[]"), 0644)
+	}
+	fmt.Println("All log files cleared.")
 }
 
 func main() {
@@ -323,7 +334,8 @@ func main() {
 		fmt.Printf("AiKore Global CLI\n")
 		fmt.Printf("App Directory: %s\n", appDir)
 		fmt.Printf("Config File:   %s\n", filepath.Join(appDir, "config.json"))
-		fmt.Printf("Log File:      %s\n", dbPath)
+		fmt.Printf("Current Log:   %s\n", getLogPath(time.Now()))
+		fmt.Printf("Total Files:   %d\n", len(getAllLogFiles()))
 
 	case "stats":
 		showStats()
@@ -385,6 +397,8 @@ func updateConfig(key string, values []string) {
 		}
 	case "show_workspace":
 		config.Display.ShowWorkspace = (strings.ToLower(val) == "true")
+	case "rotation":
+		config.Storage.Rotation = val
 	default:
 		fmt.Printf("Error: Unknown config key: %s\n", key)
 		return
@@ -402,7 +416,7 @@ func updateConfig(key string, values []string) {
 
 func showStats() {
 	loadConfig()
-	logs := getLogs()
+	logs := getLogsFromAllFiles()
 	total := len(logs)
 	autoLogs := 0
 	manualLogs := 0
@@ -419,8 +433,8 @@ func showStats() {
 		tOut += log.TokensOut
 	}
 
-	fmt.Printf("AiKore Usage Statistics\n")
-	fmt.Println(strings.Repeat("-", 30))
+	fmt.Printf("AiKore Usage Statistics (Across All Files)\n")
+	fmt.Println(strings.Repeat("-", 40))
 	fmt.Printf("Total Logs:     %d\n", total)
 	fmt.Printf("  - Auto:       %d\n", autoLogs)
 	fmt.Printf("  - Manual:     %d\n", manualLogs)
@@ -431,7 +445,7 @@ func showStats() {
 
 func exportLogs(format string) {
 	loadConfig()
-	logs := getLogs()
+	logs := getLogsFromAllFiles()
 	if len(logs) == 0 {
 		fmt.Println("No logs to export.")
 		return
