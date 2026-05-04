@@ -139,14 +139,30 @@ func addLog(entry LogEntry) {
 	fmt.Printf("Log added: [%s] (%s)%s\n", entry.Timestamp, entry.Category, estStr)
 }
 
-func listLogs() {
+func searchLogs(keyword string) {
 	loadConfig()
 	logs := getLogs()
-	if len(logs) == 0 {
-		fmt.Println("No logs found.")
+	keyword = strings.ToLower(keyword)
+	var found []LogEntry
+
+	for _, log := range logs {
+		if strings.Contains(strings.ToLower(log.Message), keyword) ||
+			strings.Contains(strings.ToLower(log.Question), keyword) ||
+			strings.Contains(strings.ToLower(log.Answer), keyword) ||
+			strings.Contains(strings.ToLower(log.Category), keyword) {
+			found = append(found, log)
+		}
+	}
+
+	if len(found) == 0 {
+		fmt.Printf("No logs found matching: %s\n", keyword)
 		return
 	}
 
+	renderLogs(found)
+}
+
+func renderLogs(logs []LogEntry) {
 	if config.Display.ReverseOrder {
 		for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
 			logs[i], logs[j] = logs[j], logs[i]
@@ -184,6 +200,16 @@ func listLogs() {
 		}
 		fmt.Println(strings.Repeat("-", 100))
 	}
+}
+
+func listLogs() {
+	loadConfig()
+	logs := getLogs()
+	if len(logs) == 0 {
+		fmt.Println("No logs found.")
+		return
+	}
+	renderLogs(logs)
 }
 
 func clearLogs() {
@@ -258,6 +284,13 @@ func main() {
 	case "list":
 		listLogs()
 
+	case "search":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: Please provide a keyword to search.")
+			return
+		}
+		searchLogs(os.Args[2])
+
 	case "clear":
 		clearLogs()
 
@@ -272,5 +305,6 @@ func printUsage() {
 	fmt.Println("  go run . log \"message\" [-c category]")
 	fmt.Println("  go run . auto \"question\" \"answer\" \"model\" \"tokens_in\" \"tokens_out\"")
 	fmt.Println("  go run . list")
+	fmt.Println("  go run . search \"keyword\"")
 	fmt.Println("  go run . clear")
 }
