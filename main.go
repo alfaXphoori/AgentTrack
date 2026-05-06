@@ -209,10 +209,15 @@ func renderLogs(logs []LogEntry) {
 	}
 	displayLogs := logs[:limit]
 
-	fmt.Printf("%-20s | %-12s | Metadata / Q&A\n", "Timestamp", "Category")
-	fmt.Println(strings.Repeat("=", 100))
+	fmt.Printf("%-5s | %-20s | %-12s | Metadata / Q&A\n", "ID", "Timestamp", "Category")
+	fmt.Println(strings.Repeat("=", 110))
 
-	for _, log := range displayLogs {
+	for i, log := range displayLogs {
+		displayID := i
+		if config.Display.ReverseOrder {
+			displayID = len(logs) - 1 - i
+		}
+
 		estIn, estOut := "", ""
 		if log.IsEstimated {
 			estIn = " (est)"
@@ -222,28 +227,89 @@ func renderLogs(logs []LogEntry) {
 		workspace := fmt.Sprintf("[WS: %s]", log.Workspace)
 
 		if log.Category == "AutoLog" && log.Question != "" && log.Answer != "" {
-			fmt.Printf("%-20s | %-12s | %s\n", log.Timestamp, log.Category, metadata)
+			fmt.Printf("#%-4d | %-20s | %-12s | %s\n", displayID, log.Timestamp, log.Category, metadata)
 			if config.Display.ShowWorkspace {
-				fmt.Printf("%-20s | %-12s | %s\n", "", "", workspace)
+				fmt.Printf("%-5s | %-20s | %-12s | %s\n", "", "", "", workspace)
 			}
-			fmt.Printf("%-20s | %-12s | Q: %s\n", "", "", log.Question)
-			fmt.Printf("%-20s | %-12s | A: %s\n", "", "", log.Answer)
+			fmt.Printf("%-5s | %-20s | %-12s | Q: %s\n", "", "", "", log.Question)
+			fmt.Printf("%-5s | %-20s | %-12s | A: %s\n", "", "", "", log.Answer)
 		} else {
-			fmt.Printf("%-20s | %-12s | %s\n", log.Timestamp, log.Category, log.Message)
-			fmt.Printf("%-20s | %-12s | %s\n", "", "", metadata)
+			fmt.Printf("#%-4d | %-20s | %-12s | %s\n", displayID, log.Timestamp, log.Category, log.Message)
+			fmt.Printf("%-5s | %-20s | %-12s | %s\n", "", "", "", metadata)
 		}
-		fmt.Println(strings.Repeat("-", 100))
+		fmt.Println(strings.Repeat("-", 110))
 	}
 }
 
-func listLogs() {
+func listLogs(dateFilter string) {
 	loadConfig()
 	logs := getLogsFromAllFiles()
 	if len(logs) == 0 {
 		fmt.Println("No logs found.")
 		return
 	}
-	renderLogs(logs)
+
+	if dateFilter != "" {
+		var filtered []LogEntry
+		for _, log := range logs {
+			if strings.HasPrefix(log.Timestamp, dateFilter) {
+				filtered = append(filtered, log)
+			}
+		}
+		if len(filtered) == 0 {
+			fmt.Printf("No logs found for date: %s\n", dateFilter)
+			return
+		}
+		renderLogs(filtered)
+	} else {
+		renderLogs(logs)
+	}
+}
+
+func deleteLog(index int) {
+	loadConfig()
+	logs := getLogsFromAllFiles()
+	if index < 0 || index >= len(logs) {
+		fmt.Printf("Error: Index %d out of range (0-%d)\n", index, len(logs)-1)
+		return
+	}
+
+	target := logs[index]
+
+	t, err := time.Parse("2006-01-02 15:04:05", target.Timestamp)
+	if err != nil {
+		fmt.Printf("Error parsing timestamp for deletion: %v\n", err)
+		return
+	}
+
+	path := getLogPath(t)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Printf("Error reading log file for deletion: %v\n", err)
+		return
+	}
+
+	var fileLogs []LogEntry
+	json.Unmarshal(data, &fileLogs)
+
+	var newFileLogs []LogEntry
+	found := false
+	for _, l := range fileLogs {
+		if !found && l.Timestamp == target.Timestamp && l.Category == target.Category &&
+			l.Message == target.Message && l.Question == target.Question {
+			found = true
+			continue
+		}
+		newFileLogs = append(newFileLogs, l)
+	}
+
+	if !found {
+		fmt.Println("Error: Could not find the exact log entry in the file.")
+		return
+	}
+
+	saveLogsToFile(path, newFileLogs)
+	fmt.Printf("Log #%d [%s] deleted successfully.\n", index, target.Timestamp)
 }
 
 func clearLogs() {
@@ -318,7 +384,23 @@ func main() {
 		})
 
 	case "list":
-		listLogs()
+		date := ""
+		if len(os.Args) > 2 {
+			date = os.Args[2]
+		}
+		listLogs(date)
+
+	case "delete":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: Please provide a log index to delete.")
+			return
+		}
+		idx, err := strconv.Atoi(os.Args[2])
+		if err == nil {
+			deleteLog(idx)
+		} else {
+			fmt.Printf("Error: Invalid index: %v\n", err)
+		}
 
 	case "search":
 		if len(os.Args) < 3 {
@@ -487,8 +569,9 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  aikore log \"message\" [-c category]")
 	fmt.Println("  aikore auto \"question\" \"answer\" \"model\" \"tokens_in\" \"tokens_out\"")
-	fmt.Println("  aikore list")
+	fmt.Println("  aikore list [date]")
 	fmt.Println("  aikore search \"keyword\"")
+	fmt.Println("  aikore delete <index>")
 	fmt.Println("  aikore stats")
 	fmt.Println("  aikore export [md]")
 	fmt.Println("  aikore clear")
