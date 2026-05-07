@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,9 +81,14 @@ func TestTracker(t *testing.T) {
 	}
 	defer os.Remove("tracker_test_bin.exe")
 
+	openRouterURL := ""
 	runCmd := func(args ...string) (string, error) {
 		cmd := exec.Command("./tracker_test_bin.exe", args...)
-		cmd.Env = append(os.Environ(), "TRACKCLI_HOME="+cwd)
+		env := append(os.Environ(), "TRACKCLI_HOME="+cwd)
+		if openRouterURL != "" {
+			env = append(env, "TRACKCLI_OPENROUTER_MODELS_URL="+openRouterURL)
+		}
+		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
@@ -230,6 +237,50 @@ func TestTracker(t *testing.T) {
 		t.Fatalf("Pricing config get output unexpected: %s", out)
 	}
 
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"data": [
+				{"id": "openai/test-model", "pricing": {"prompt": "0.0005", "completion": "0.0007"}},
+				{"id": "google/gemini-1.5-flash", "pricing": {"prompt": "0.0001", "completion": "0.0002"}}
+			]
+		}`))
+	}))
+	defer server.Close()
+	openRouterURL = server.URL
+
+	out, err = runCmd("pricing", "sync", "test-model", "gemini-1.5-flash", "missing-model")
+	if err != nil {
+		t.Fatalf("Pricing sync failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "Updated: 1") || !strings.Contains(out, "Unchanged: 1") || !strings.Contains(out, "Missing: 1") {
+		t.Fatalf("Pricing sync output unexpected: %s", out)
+	}
+
+	out, err = runCmd("config", "get", "pricing.test-model.input_per_1k")
+	if err != nil {
+		t.Fatalf("Config get after pricing sync failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "pricing.test-model.input_per_1k = 0.5") {
+		t.Fatalf("Synced test-model price not saved: %s", out)
+	}
+
+	out, err = runCmd("config", "get", "pricing.gemini-1.5-flash.output_per_1k")
+	if err != nil {
+		t.Fatalf("Config get after gemini pricing sync failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "pricing.gemini-1.5-flash.output_per_1k = 0.2") {
+		t.Fatalf("Synced gemini price not saved: %s", out)
+	}
+
+	out, err = runCmd("pricing", "sync", "test-model")
+	if err != nil {
+		t.Fatalf("Second pricing sync failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "No changes needed") {
+		t.Fatalf("Second pricing sync should report no changes: %s", out)
+	}
+
 	out, err = runCmd("stats", "model")
 	if err != nil {
 		t.Fatalf("Stats model failed: %v (%s)", err, out)
@@ -290,6 +341,7 @@ func TestTracker(t *testing.T) {
 		!strings.Contains(out, `trackcli search tag "tag"`) ||
 		!strings.Contains(out, `trackcli edit <index> [field] <value>`) ||
 		!strings.Contains(out, `trackcli stats | stats model | stats cost`) ||
+		!strings.Contains(out, `trackcli pricing sync [all|model ...]`) ||
 		!strings.Contains(out, `trackcli export [md|csv|json]`) ||
 		!strings.Contains(out, "trackcli config [show|get|set|reset]") {
 		t.Fatalf("Usage output missing new commands: %s", out)

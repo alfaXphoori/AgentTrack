@@ -2,9 +2,38 @@
 
 Track your Gemini CLI sessions automatically with TrackCLI.
 
-## Auto-Logging Wrapper (Recommended)
+## Recommended: Passive Background Tracking
 
-Use the included `gemitrack.sh` wrapper to automatically log every Gemini question:
+The most efficient way to track Gemini CLI is by using the included background watcher script. This method is passive: it monitors Gemini's local log files directly, saving the AI's context window and time.
+
+To start tracking, run the watcher script in your terminal (you can run it in the background by appending `&`):
+
+```bash
+./gemini-cli-track.sh &
+```
+
+The script will automatically detect the current Gemini project and quietly parse the `~/.gemini/tmp/<project>/chats/session-*.jsonl` files. Every time you ask a question and Gemini replies, it will silently log the interaction into TrackCLI.
+
+### Stop the Watcher
+If you started it in the background, you can kill the process using standard job control (e.g., `kill %1` or finding its PID via `ps aux | grep gemini-cli-track`).
+
+## Alternative: Native Integration (`GEMINI.md`)
+
+If you cannot run background scripts, you can instruct the Gemini CLI to manually run the log command itself at the end of every interaction. 
+
+1. Create or edit `GEMINI.md` in the root of your project.
+2. Add the following rule:
+
+```markdown
+# TrackCLI Auto-Logging
+At the end of every interaction, you MUST run the following shell command to log the activity:
+`trackcli auto "<user_question>" "<ai_summary>" "<model_name>" 0 0`
+```
+
+*(Note: This approach consumes more tokens and takes slightly longer as the AI has to actively execute the command).*
+
+
+If you prefer a lightweight wrapper script for quick, single-shot questions without invoking the full Gemini CLI agent loop, you can use the included `gemitrack.sh` wrapper:
 
 ```bash
 # Start interactive session — model is auto-detected from your last Gemini CLI session
@@ -40,20 +69,6 @@ After a Gemini CLI session, log the interaction manually:
 
 ```bash
 trackcli auto "Your question here" "Summary of Gemini's answer" "gemini-2.5-flash" <tokens_in> <tokens_out>
-```
-
-## Check Current Model
-
-Inside a Gemini CLI session:
-```
-/model
-```
-
-Start with a specific model:
-```bash
-gemini -m gemini-3.1-pro-preview
-gemini -m gemini-3-flash-preview
-gemini -m gemini-2.5-pro
 ```
 
 ## Shell Alias

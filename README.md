@@ -1,193 +1,193 @@
-# TrackCLI Activity Tracker
+# TrackCLI — AI Activity Tracker `v0.13`
 
-A program for tracking tasks and logging via the Terminal, developed to help record various activities while using AI CLIs. It features an Auto-Tracking system for automatically recording questions and answers.
+A cross-platform terminal tool for tracking tasks and AI interactions. Automatically logs questions, answers, models, and token usage from your AI CLI sessions — with real-time Gemini CLI watching, activity summaries, and tag management.
+
+## What's New in v0.13
+- **`trackcli summary [today|week|month]`** — Activity summary with model breakdown, token totals, and tag usage
+- **`trackcli tag list`** — View all tags and their counts across all logs
+- **`trackcli stats today`** — Quick today-only token and log stats
+- **`trackcli pricing sync [all|model ...]`** — Pull the latest OpenRouter pricing into local config
+- **`gemini-watch.sh`** — Background watcher that auto-logs native Gemini CLI sessions in real-time (no wrapper needed)
+- **Bug fix:** Timezone-aware date filtering in summary commands
 
 ## Features
-- **(NEW) AI Integrations:** Supports automatic logging from multiple platforms (Gemini, Cursor, Cline, GitHub Copilot, Aider, Open Interpreter, Shell-GPT).
-- **Auto-Tracking:** Automatically logs User questions and AI answers in every conversation.
-- Manual logging with automatic timestamps.
-- Categorize logs by type.
-- View past history through the Terminal with clear Q&A formatting.
-- Data is stored in a JSON file (`trackcli_logs.json`).
+- **Auto-Tracking:** Logs AI questions, answers, models, and token counts automatically
+- **Gemini CLI Native Watch:** `gemini-watch.sh` monitors live Gemini sessions without any wrapper
+- **Activity Summaries:** Daily, weekly, and monthly breakdowns with model and tag stats
+- **Tag System:** Tag logs and search/list by tag
+- **Manual Logging:** Add entries with categories, tags, and timestamps
+- **Real-time Watch:** `trackcli watch` monitors new logs live
+- **Stats & Cost:** Per-model token usage and estimated cost via OpenRouter pricing
+- **OpenRouter Price Sync:** Pull the latest model prices from OpenRouter and save updates into config
+- **Export:** Export logs to Markdown, CSV, or JSON
+- **Date Filtering:** Filter any command with `--from` / `--to`
+- **Config:** Timezone, token estimation, display preferences, model pricing
+- **Monthly Log Rotation:** Logs stored per-month in `~/.trackcli/`
 
 ## Setup
-This program is developed using **Go (Golang)**. You must have Go installed on your machine.
+Requires **Go (Golang)** installed. See [INSTALL.md](INSTALL.md) for full platform instructions.
 
-1. Check your Go installation with `go version`.
-2. You can run it immediately using the command `go run .` or compile it into a binary with `go build`.
+```bash
+git clone <repo>
+cd Track_CLI
+go build -o trackcli .
+```
 
 ## Usage
 
-### 1. Auto-Tracking System (Q&A)
-The system is configured for AI (like Gemini CLI) to automatically run this command every time it answers a question:
+### Auto-Tracking (AI Q&A)
 ```bash
-go run . auto "user's question" "summary of AI's answer" "model_name" tokens_in tokens_out
+trackcli auto "user question" "AI answer summary" "model_name" tokens_in tokens_out
 ```
 
-### 2. Manual Logging
+### Manual Logging
 ```bash
-go run . log "Started research on project components"
+trackcli log "Started research on project"
+trackcli log "Fixed bug in main.go" -c "Bugfix"
+trackcli log "Improved export flow" -c "Enhancement" -t "cli,export,go"
 ```
 
-Specify a category:
+### View History
 ```bash
-go run . log "Fixed a bug in main.go" -c "Bugfix"
+trackcli list                                        # all logs (newest first)
+trackcli list last                                   # most recent entry
+trackcli list 2026-05-07                             # specific date
+trackcli list --from 2026-05-01 --to 2026-05-07      # date range
+trackcli list model "gemini-3-flash-preview"         # by model
+trackcli list model all                              # model usage summary
+trackcli list category "Bugfix"                      # by category
+trackcli list category all                           # category summary
 ```
 
-Add tags:
+### Search
 ```bash
-go run . log "Improved export flow" -c "Enhancement" -t "cli,export,go"
+trackcli search "bug"
+trackcli search tag "export"
+trackcli search model "gemini-2.5-pro"
+trackcli search "fix" --from 2026-05-01 --to 2026-05-31
 ```
 
-### 3. View All History
+### Activity Summary *(v0.13)*
 ```bash
-go run . list
-```
-*(For AutoLogs, the system displays Q: and A: on separate lines for readability)*
-
-Filter by date range:
-```bash
-go run . list --from 2026-05-01 --to 2026-05-06
+trackcli summary             # today (default)
+trackcli summary today
+trackcli summary week
+trackcli summary month
 ```
 
-List by model:
+### Tags *(v0.13)*
 ```bash
-go run . list model "gemini-1.5-flash"
+trackcli tag list            # all tags with counts
 ```
 
-Show model usage counts, total tokens, and estimated cost for all logged models:
+### Stats
 ```bash
-go run . list model all
+trackcli stats               # overall totals
+trackcli stats today         # today only
+trackcli stats model         # per-model breakdown
+trackcli stats cost          # estimated cost
 ```
 
-List by category:
+### Pricing Sync
 ```bash
-go run . list category "Bugfix"
+trackcli pricing sync                        # sync models found in logs/config
+trackcli pricing sync gemini-2.5-pro         # sync one specific model
+trackcli pricing sync all                    # sync every model from OpenRouter
 ```
 
-Show usage counts for all categories:
+### Edit & Delete
 ```bash
-go run . list category all
+trackcli edit 5 "Corrected message"
+trackcli edit 5 tags "bug,reviewed"
+trackcli delete 5
 ```
 
-Search by keyword:
+### Export
 ```bash
-go run . search "bug"
+trackcli export md
+trackcli export csv
+trackcli export json
 ```
 
-Search by tag:
+### Real-time Watch
 ```bash
-go run . search tag "export"
+trackcli watch               # monitor new logs live
 ```
 
-Search by model:
+### Configure
 ```bash
-go run . search model "gemini-1.5-flash"
+trackcli config show
+trackcli config set display.max_logs_view 25
+trackcli config set pricing.gemini-2.5-pro.input_per_1k 0.00125
+trackcli pricing sync gemini-2.5-pro
+trackcli config reset
 ```
 
-Search inside a date range:
+### Other
 ```bash
-go run . search "bug" --from 2026-05-01 --to 2026-05-31
+trackcli version
+trackcli info
+trackcli clear
 ```
 
-### 4. Edit a Log
-Update a manual log message:
+## Gemini CLI Integration
+
+### Option 1 — Native Watch (Recommended)
+Run `gemini-watch.sh` in the background. It monitors your Gemini session files and auto-logs every Q&A in real-time:
 ```bash
-go run . edit 5 "Corrected message"
+./gemini-watch.sh &          # start background watcher
+gemini                       # use Gemini CLI normally — everything is tracked
 ```
 
-Update a specific field:
+### Option 2 — Interactive Wrapper
+Use `gemitrack.sh` as a Gemini CLI wrapper with per-question logging and live model detection:
 ```bash
-go run . edit 5 tags "bug,reviewed"
+./gemitrack.sh
 ```
 
-### 5. Clear All Logs
-```bash
-go run . clear
-```
-
-### 6. Stats and Export
-Show overall stats:
-```bash
-go run . stats
-```
-
-Show per-model token stats:
-```bash
-go run . stats model
-```
-
-Show estimated token cost using configured pricing:
-```bash
-go run . stats cost
-```
-
-Export to Markdown, CSV, or JSON:
-```bash
-go run . export md
-go run . export csv
-go run . export json
-```
-
-### 7. Configure the App
-Show the current config:
-```bash
-go run . config show
-```
-
-Update one setting:
-```bash
-go run . config set display.max_logs_view 25
-```
-
-Read one setting:
-```bash
-go run . config get timezone
-```
-
-Set model pricing for cost estimation:
-```bash
-go run . config set pricing.gpt-5.4.input_per_1k 0.003
-go run . config set pricing.gpt-5.4.output_per_1k 0.012
-```
-
-Reset everything to defaults:
-```bash
-go run . config reset
-```
+See [integrations/gemini.md](integrations/gemini.md) for full setup details.
 
 ## AI Agent Integrations
-TrackCLI is designed to work seamlessly with various AI Agents through rule files:
-- **Gemini CLI:** Uses `GEMINI.md`
-- **Cursor IDE:** Uses `.cursorrules`
-- **Cline (VS Code):** Uses `.clinerules`
-- **GitHub Copilot:** See the guide in `integrations/copilot.md`
-- **Aider:** See the guide in `integrations/aider.md`
-- **Open Interpreter:** See the guide in `integrations/open-interpreter.md`
-- **Shell-GPT (sgpt):** See the guide in `integrations/sgpt.md`
-- **Claude Code:** See the guide in `integrations/claude-code.md`
-- **Qwen Code:** See the guide in `integrations/qwen-code.md`
-- **Codex CLI:** See the guide in `integrations/codex.md`
-- **Roo Code:** See the guide in `integrations/roo-code.md`
-- **Windsurf Editor:** See the guide in `integrations/windsurf.md`
-- **Continue.dev:** See the guide in `integrations/continue.md`
 
-See the `integrations/` folder for more details.
+| Agent | Method |
+|---|---|
+| **Gemini CLI** | `gemini-watch.sh` (native) or `gemitrack.sh` (wrapper) |
+| **GitHub Copilot** | See [integrations/copilot.md](integrations/copilot.md) |
+| **Cursor IDE** | `.cursorrules` |
+| **Cline (VS Code)** | `.clinerules` |
+| **Claude Code** | See [integrations/claude-code.md](integrations/claude-code.md) |
+| **Aider** | See [integrations/aider.md](integrations/aider.md) |
+| **Shell-GPT** | See [integrations/sgpt.md](integrations/sgpt.md) |
+| **Open Interpreter** | See [integrations/open-interpreter.md](integrations/open-interpreter.md) |
+| **Qwen Code** | See [integrations/qwen-code.md](integrations/qwen-code.md) |
+| **Codex CLI** | See [integrations/codex.md](integrations/codex.md) |
+| **Roo Code** | See [integrations/roo-code.md](integrations/roo-code.md) |
+| **Windsurf** | See [integrations/windsurf.md](integrations/windsurf.md) |
+| **Continue.dev** | See [integrations/continue.md](integrations/continue.md) |
 
 ## File Structure
-- `main.go`: Main program file (Golang)
-- `main_test.go`: Go Unit Test file
-- `go.mod`: Go Dependency manager
-- `config.json`: Configuration file (Timezone, Tokens, Display)
-- `.gitignore`: Configured to prevent committing log and backup files to Git
-- `trackcli_logs.json`: Log data file (Ignored by Git)
-- `README.md`: Project details
-- `GEMINI.md`: Rules forcing the AI to log automatically
-- `INSTALL.md`: Cross-platform installation instructions
+```
+Track_CLI/
+├── main.go               # Core CLI (all commands)
+├── main_test.go          # Unit tests
+├── go.mod                # Go module
+├── trackcli              # Compiled binary
+├── gemitrack.sh          # Gemini CLI interactive wrapper
+├── gemini-watch.sh       # Gemini CLI background session watcher
+├── INSTALL.md            # Cross-platform install guide
+├── AGENTS.md             # AI agent auto-logging rules
+├── integrations/         # Per-agent integration guides
+│   ├── gemini.md
+│   ├── copilot.md
+│   ├── cursor.md
+│   └── ...
+└── ~/.trackcli/          # Data directory (auto-created)
+    ├── config.json
+    └── trackcli_logs_YYYY_MM.json
+```
 
 ## Testing
-You can run Unit Tests to verify functionality using the command:
 ```bash
 go test -v
 ```
-The system will back up existing data before testing and automatically restore it upon completion.
+Tests back up and restore existing data automatically.

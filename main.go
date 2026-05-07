@@ -61,6 +61,11 @@ type LogEntry struct {
 	TokensIn    int      `json:"tokens_in"`
 	TokensOut   int      `json:"tokens_out"`
 	IsEstimated bool     `json:"is_estimated"`
+	Duration    float64  `json:"duration,omitempty"`   // Time taken in seconds
+	SessionID   string   `json:"session_id,omitempty"` // Conversation thread identifier
+	Cost        float64  `json:"cost,omitempty"`       // Calculated cost at the time of logging
+	Status      string   `json:"status,omitempty"`     // Success or error status
+	ToolsUsed   []string `json:"tools_used,omitempty"` // Tools invoked by the AI
 	Tags        []string `json:"tags,omitempty"`
 }
 
@@ -79,7 +84,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.12"
+	Version     = "0.13"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
@@ -430,6 +435,49 @@ func registerOpenRouterAlias(prices map[string]ModelPrice, id string, price Mode
 	}
 }
 
+func fetchOpenRouterPricingData() (map[string]ModelPrice, map[string]ModelPrice, error) {
+	url := os.Getenv("TRACKCLI_OPENROUTER_MODELS_URL")
+	if url == "" {
+		url = "https://openrouter.ai/api/v1/models"
+	}
+	if strings.EqualFold(url, "off") {
+		return nil, nil, fmt.Errorf("OpenRouter pricing sync is disabled via TRACKCLI_OPENROUTER_MODELS_URL=off")
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("unexpected OpenRouter status: %s", resp.Status)
+	}
+
+	var payload OpenRouterModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, nil, err
+	}
+
+	canonical := make(map[string]ModelPrice)
+	aliases := make(map[string]ModelPrice)
+	for _, entry := range payload.Data {
+		id := strings.ToLower(strings.TrimSpace(entry.ID))
+		if id == "" {
+			continue
+		}
+		price := ModelPrice{
+			InputPer1K:  parseOpenRouterRate(entry.Pricing.Prompt),
+			OutputPer1K: parseOpenRouterRate(entry.Pricing.Completion),
+		}
+		canonical[id] = price
+		registerOpenRouterAlias(aliases, entry.ID, price)
+	}
+
+	return canonical, aliases, nil
+}
+
 func loadOpenRouterPricing() map[string]ModelPrice {
 	if openRouterPricingLoaded {
 		return openRouterPricingCache
@@ -438,39 +486,140 @@ func loadOpenRouterPricing() map[string]ModelPrice {
 	openRouterPricingLoaded = true
 	openRouterPricingCache = make(map[string]ModelPrice)
 
-	url := os.Getenv("TRACKCLI_OPENROUTER_MODELS_URL")
-	if url == "" {
-		url = "https://openrouter.ai/api/v1/models"
-	}
-	if strings.EqualFold(url, "off") {
-		return openRouterPricingCache
-	}
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	_, aliases, err := fetchOpenRouterPricingData()
 	if err != nil {
 		return openRouterPricingCache
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return openRouterPricingCache
-	}
-
-	var payload OpenRouterModelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return openRouterPricingCache
-	}
-
-	for _, entry := range payload.Data {
-		price := ModelPrice{
-			InputPer1K:  parseOpenRouterRate(entry.Pricing.Prompt),
-			OutputPer1K: parseOpenRouterRate(entry.Pricing.Completion),
-		}
-		registerOpenRouterAlias(openRouterPricingCache, entry.ID, price)
-	}
+	openRouterPricingCache = aliases
 
 	return openRouterPricingCache
+}
+
+func sameModelPrice(a, b ModelPrice) bool {
+	return a.InputPer1K == b.InputPer1K && a.OutputPer1K == b.OutputPer1K
+}
+
+func collectModelNamesForPricingSync() []string {
+	seen := make(map[string]bool)
+	for name := range config.Pricing.Models {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		seen[trimmed] = true
+	}
+	for _, log := range getLogsFromAllFiles() {
+		model := strings.TrimSpace(logModel(log))
+		if model == "" {
+			continue
+		}
+		seen[model] = true
+	}
+
+	var models []string
+	for model := range seen {
+		models = append(models, model)
+	}
+	sort.Slice(models, func(i, j int) bool {
+		return strings.ToLower(models[i]) < strings.ToLower(models[j])
+	})
+	return models
+}
+
+func syncOpenRouterPricing(args []string) {
+	loadConfig()
+
+	canonical, aliases, err := fetchOpenRouterPricingData()
+	if err != nil {
+		fmt.Printf("Error fetching OpenRouter pricing: %v\n", err)
+		return
+	}
+	if config.Pricing.Models == nil {
+		config.Pricing.Models = make(map[string]ModelPrice)
+	}
+
+	var targets []string
+	if len(args) == 0 {
+		targets = collectModelNamesForPricingSync()
+		if len(targets) == 0 {
+			fmt.Println("No models found in logs/config to sync. Use `trackcli pricing sync all` or specify model names.")
+			return
+		}
+	} else if len(args) == 1 && strings.EqualFold(args[0], "all") {
+		for model := range canonical {
+			targets = append(targets, model)
+		}
+		sort.Slice(targets, func(i, j int) bool {
+			return strings.ToLower(targets[i]) < strings.ToLower(targets[j])
+		})
+	} else {
+		targets = args
+	}
+
+	var added, updated, unchanged int
+	var changedLines []string
+	var missing []string
+
+	for _, target := range targets {
+		name := strings.TrimSpace(target)
+		if name == "" {
+			continue
+		}
+		price, ok := aliases[strings.ToLower(name)]
+		if !ok {
+			price, ok = canonical[strings.ToLower(name)]
+		}
+		if !ok {
+			missing = append(missing, name)
+			continue
+		}
+
+		current, exists := config.Pricing.Models[name]
+		if exists && sameModelPrice(current, price) {
+			unchanged++
+			continue
+		}
+
+		config.Pricing.Models[name] = price
+		if exists {
+			updated++
+		} else {
+			added++
+		}
+		changedLines = append(changedLines, fmt.Sprintf("  %s -> input=%s output=%s", name, strconv.FormatFloat(price.InputPer1K, 'f', -1, 64), strconv.FormatFloat(price.OutputPer1K, 'f', -1, 64)))
+	}
+
+	if added == 0 && updated == 0 {
+		fmt.Printf("OpenRouter pricing checked. No changes needed. Unchanged: %d", unchanged)
+		if len(missing) > 0 {
+			fmt.Printf(" | Missing: %d", len(missing))
+		}
+		fmt.Println()
+		if len(missing) > 0 {
+			fmt.Printf("Missing models: %s\n", strings.Join(missing, ", "))
+		}
+		return
+	}
+
+	if err := saveConfig(); err != nil {
+		fmt.Printf("Error saving config: %v\n", err)
+		return
+	}
+
+	openRouterPricingLoaded = false
+	openRouterPricingCache = nil
+
+	fmt.Printf("OpenRouter pricing synced. Added: %d | Updated: %d | Unchanged: %d", added, updated, unchanged)
+	if len(missing) > 0 {
+		fmt.Printf(" | Missing: %d", len(missing))
+	}
+	fmt.Println()
+	for _, line := range changedLines {
+		fmt.Println(line)
+	}
+	if len(missing) > 0 {
+		fmt.Printf("Missing models: %s\n", strings.Join(missing, ", "))
+	}
 }
 
 func findModelPrice(model string) (ModelPrice, bool) {
@@ -648,8 +797,8 @@ func renderLogs(logs []LogEntry) {
 	}
 	displayLogs := logs[:limit]
 
-	fmt.Printf("%s%-5s | %-20s | %-12s | Metadata / Q&A%s\n", ColorBold, "ID", "Timestamp", "Category", ColorReset)
-	fmt.Println(ColorGray + strings.Repeat("=", 110) + ColorReset)
+	fmt.Printf("%s%-5s | %-20s | %-12s | %-8s | Metadata / Q&A%s\n", ColorBold, "ID", "Timestamp", "Category", "Time", ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("=", 120) + ColorReset)
 
 	for i, log := range displayLogs {
 		displayID := i
@@ -663,31 +812,54 @@ func renderLogs(logs []LogEntry) {
 			estIn = " (est)"
 			estOut = " (est)"
 		}
+		
+		durationStr := ""
+		if log.Duration > 0 {
+			durationStr = fmt.Sprintf("%.2fs", log.Duration)
+		}
+		
 		metadata := fmt.Sprintf(ColorYellow+"[Model: %s | Tokens: In=%d%s, Out=%d%s]"+ColorReset, logModel(log), log.TokensIn, estIn, log.TokensOut, estOut)
+		if log.Cost > 0 {
+			metadata += fmt.Sprintf(ColorGreen+" [Cost: %s %.4f]"+ColorReset, config.Pricing.Currency, log.Cost)
+		}
+		if log.SessionID != "" {
+			metadata += fmt.Sprintf(ColorPurple+" [SID: %s]"+ColorReset, log.SessionID)
+		}
+		if log.Status != "" && log.Status != "success" {
+			metadata += fmt.Sprintf(ColorRed+" [Status: %s]"+ColorReset, log.Status)
+		}
 		workspace := fmt.Sprintf(ColorCyan+"[WS: %s]"+ColorReset, log.Workspace)
 		tagsLine := ""
 		if len(log.Tags) > 0 {
 			tagsLine = fmt.Sprintf(ColorYellow+"[Tags: %s]"+ColorReset, strings.Join(log.Tags, ", "))
 		}
-
-		if category == "AutoLog" && log.Question != "" && log.Answer != "" {
-			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | %s\n", displayID, log.Timestamp, category, metadata)
-			if config.Display.ShowWorkspace {
-				fmt.Printf("%-5s | %-20s | %-12s | 📁 %s\n", "", "", "", workspace)
-			}
+		if len(log.ToolsUsed) > 0 {
+			toolsLine := fmt.Sprintf(ColorBlue+"[Tools: %s]"+ColorReset, strings.Join(log.ToolsUsed, ", "))
 			if tagsLine != "" {
-				fmt.Printf("%-5s | %-20s | %-12s | 🏷️ %s\n", "", "", "", tagsLine)
-			}
-			fmt.Printf("%-5s | %-20s | %-12s | 👤 "+ColorBold+"Q: %s"+ColorReset+"\n", "", "", "", log.Question)
-			fmt.Printf("%-5s | %-20s | %-12s | 🤖 "+ColorBold+"A: %s"+ColorReset+"\n", "", "", "", log.Answer)
-		} else {
-			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | 📝 %s\n", displayID, log.Timestamp, category, log.Message)
-			fmt.Printf("%-5s | %-20s | %-12s | %s\n", "", "", "", metadata)
-			if tagsLine != "" {
-				fmt.Printf("%-5s | %-20s | %-12s | 🏷️ %s\n", "", "", "", tagsLine)
+				tagsLine += " " + toolsLine
+			} else {
+				tagsLine = toolsLine
 			}
 		}
-		fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
+
+		if category == "AutoLog" && log.Question != "" && log.Answer != "" {
+			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | "+ColorCyan+"%-8s"+ColorReset+" | %s\n", displayID, log.Timestamp, category, durationStr, metadata)
+			if config.Display.ShowWorkspace {
+				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 📁 %s\n", "", "", "", "", workspace)
+			}
+			if tagsLine != "" {
+				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🏷️ %s\n", "", "", "", "", tagsLine)
+			}
+			fmt.Printf("%-5s | %-20s | %-12s | %-8s | 👤 "+ColorBold+"Q: %s"+ColorReset+"\n", "", "", "", "", log.Question)
+			fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🤖 "+ColorBold+"A: %s"+ColorReset+"\n", "", "", "", "", log.Answer)
+		} else {
+			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | "+ColorCyan+"%-8s"+ColorReset+" | 📝 %s\n", displayID, log.Timestamp, category, durationStr, log.Message)
+			fmt.Printf("%-5s | %-20s | %-12s | %-8s | %s\n", "", "", "", "", metadata)
+			if tagsLine != "" {
+				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🏷️ %s\n", "", "", "", "", tagsLine)
+			}
+		}
+		fmt.Println(ColorGray + strings.Repeat("-", 120) + ColorReset)
 	}
 }
 
@@ -743,6 +915,11 @@ func logEntriesMatch(a LogEntry, b LogEntry) bool {
 		a.TokensIn == b.TokensIn &&
 		a.TokensOut == b.TokensOut &&
 		a.IsEstimated == b.IsEstimated &&
+		a.Duration == b.Duration &&
+		a.SessionID == b.SessionID &&
+		a.Cost == b.Cost &&
+		a.Status == b.Status &&
+		sameTags(a.ToolsUsed, b.ToolsUsed) &&
 		sameTags(a.Tags, b.Tags)
 }
 
@@ -848,6 +1025,40 @@ func clearLogs() {
 	fmt.Println("All log files cleared.")
 }
 
+func watchLogs() {
+	loadConfig()
+	fmt.Println(ColorCyan + "👀 Watching for new TrackCLI logs in real-time... (Press Ctrl+C to stop)" + ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
+
+	lastCount := len(getLogsFromAllFiles())
+
+	for {
+		time.Sleep(1 * time.Second)
+		logs := getLogsFromAllFiles()
+		currentCount := len(logs)
+
+		if currentCount > lastCount {
+			for i := lastCount; i < currentCount; i++ {
+				log := logs[i]
+				category := logCategory(log)
+				metadata := fmt.Sprintf(ColorYellow+"[Model: %s | Tokens: In=%d, Out=%d]"+ColorReset, logModel(log), log.TokensIn, log.TokensOut)
+
+				if category == "AutoLog" && log.Question != "" {
+					fmt.Printf("✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] | %s\n", log.Timestamp, metadata)
+					fmt.Printf("  👤 "+ColorBold+"Q: %s"+ColorReset+"\n", log.Question)
+					fmt.Printf("  🤖 "+ColorBold+"A: %s"+ColorReset+"\n", log.Answer)
+				} else {
+					fmt.Printf("✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] ("+ColorPurple+"%s"+ColorReset+") | 📝 %s\n", log.Timestamp, category, log.Message)
+				}
+				fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
+			}
+			lastCount = currentCount
+		} else if currentCount < lastCount {
+			lastCount = currentCount
+		}
+	}
+}
+
 func main() {
 	loadConfig()
 
@@ -889,11 +1100,32 @@ func main() {
 		}
 
 		tIn, tOut := 0, 0
+		duration := 0.0
+		sessionID := ""
+		status := "success"
+		var toolsUsed []string
+
 		if len(os.Args) > 5 {
 			tIn, _ = strconv.Atoi(os.Args[5])
 		}
 		if len(os.Args) > 6 {
 			tOut, _ = strconv.Atoi(os.Args[6])
+		}
+		if len(os.Args) > 7 {
+			duration, _ = strconv.ParseFloat(os.Args[7], 64)
+		}
+		if len(os.Args) > 8 {
+			sessionID = os.Args[8]
+		}
+		if len(os.Args) > 9 {
+			status = os.Args[9]
+		}
+		if len(os.Args) > 10 {
+			toolsUsed = strings.Split(os.Args[10], ",")
+		}
+		var tags []string
+		if len(os.Args) > 11 {
+			tags = normalizeTags(os.Args[11])
 		}
 
 		isEst := false
@@ -903,7 +1135,7 @@ func main() {
 			isEst = true
 		}
 
-		addLog(LogEntry{
+		entry := LogEntry{
 			Category:    "AutoLog",
 			Question:    question,
 			Answer:      answer,
@@ -911,7 +1143,20 @@ func main() {
 			TokensIn:    tIn,
 			TokensOut:   tOut,
 			IsEstimated: isEst,
-		})
+			Duration:    duration,
+			SessionID:   sessionID,
+			Status:      status,
+			ToolsUsed:   toolsUsed,
+			Tags:        tags,
+		}
+
+		// Calculate cost if pricing is available
+		loadConfig()
+		if cost, ok := calculateLogCost(entry); ok {
+			entry.Cost = cost
+		}
+
+		addLog(entry)
 
 	case "list":
 		dateFilter, remaining, err := parseDateFilters(os.Args[2:])
@@ -1004,6 +1249,33 @@ func main() {
 	case "clear":
 		clearLogs()
 
+	case "summary":
+		period := "today"
+		if len(os.Args) > 2 {
+			period = strings.ToLower(os.Args[2])
+		}
+		showSummary(period)
+
+	case "tag":
+		if len(os.Args) > 2 && strings.ToLower(os.Args[2]) == "list" {
+			showTagList()
+		} else {
+			fmt.Println("Usage: trackcli tag list")
+		}
+
+	case "watch":
+		watchLogs()
+
+	case "dashboard":
+		runDashboard()
+
+	case "pricing":
+		if len(os.Args) < 3 || !strings.EqualFold(os.Args[2], "sync") {
+			fmt.Println("Usage: trackcli pricing sync [all|model ...]")
+			return
+		}
+		syncOpenRouterPricing(os.Args[3:])
+
 	case "info":
 		fmt.Printf("TrackCLI Global CLI\n")
 		fmt.Printf("Version:       %s\n", Version)
@@ -1022,6 +1294,8 @@ func main() {
 				showModelStats()
 			case "cost":
 				showCostStats()
+			case "today":
+				showStatsToday()
 			default:
 				fmt.Printf("Error: Unknown stats command: %s\n", os.Args[2])
 			}
@@ -1420,6 +1694,201 @@ func showCostStats() {
 	}
 }
 
+func showSummary(period string) {
+	loadConfig()
+	logs := getLogsFromAllFiles()
+	now := time.Now()
+
+	var from, to time.Time
+	var label string
+	switch period {
+	case "week":
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		d := now.AddDate(0, 0, -(weekday - 1))
+		from = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, now.Location())
+		to = now
+		label = "This Week (" + from.Format("Jan 2") + " – " + to.Format("Jan 2, 2006") + ")"
+	case "month":
+		from = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		to = now
+		label = "This Month (" + from.Format("Jan 2006") + ")"
+	default: // today
+		from = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		to = now
+		label = "Today (" + now.Format("Mon, Jan 2, 2006") + ")"
+	}
+
+	var filtered []LogEntry
+	for _, l := range logs {
+		t, err := time.ParseInLocation("2006-01-02 15:04:05", l.Timestamp, now.Location())
+		if err != nil {
+			continue
+		}
+		if (t.Equal(from) || t.After(from)) && (t.Equal(to) || t.Before(to)) {
+			filtered = append(filtered, l)
+		}
+	}
+
+	autoCount, manualCount := 0, 0
+	tIn, tOut := 0, 0
+	models := map[string]int{}
+	categories := map[string]int{}
+	tagCounts := map[string]int{}
+
+	for _, l := range filtered {
+		if l.Category == "AutoLog" {
+			autoCount++
+		} else {
+			manualCount++
+		}
+		tIn += l.TokensIn
+		tOut += l.TokensOut
+		m := logModel(l)
+		if m != "" {
+			models[m]++
+		}
+		c := logCategory(l)
+		if c != "" {
+			categories[c]++
+		}
+		for _, tag := range l.Tags {
+			tagCounts[tag]++
+		}
+	}
+
+	fmt.Printf("%s📅 Summary: %s%s\n", ColorBold, label, ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("─", 50) + ColorReset)
+	fmt.Printf("Total Logs:    %s%d%s  (Auto: %s%d%s | Manual: %s%d%s)\n",
+		ColorCyan, len(filtered), ColorReset,
+		ColorGreen, autoCount, ColorReset,
+		ColorPurple, manualCount, ColorReset)
+	fmt.Printf("Tokens:        In=%s%d%s  Out=%s%d%s  Total=%s%d%s\n",
+		ColorYellow, tIn, ColorReset,
+		ColorYellow, tOut, ColorReset,
+		ColorBold, tIn+tOut, ColorReset)
+
+	if len(models) > 0 {
+		fmt.Println()
+		fmt.Printf("%sModels used:%s\n", ColorCyan, ColorReset)
+		type kv struct {
+			k string
+			v int
+		}
+		var sorted []kv
+		for k, v := range models {
+			sorted = append(sorted, kv{k, v})
+		}
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+		for _, item := range sorted {
+			fmt.Printf("  %-30s %s%d logs%s\n", item.k, ColorGreen, item.v, ColorReset)
+		}
+	}
+
+	if len(categories) > 0 {
+		fmt.Println()
+		fmt.Printf("%sCategories:%s\n", ColorCyan, ColorReset)
+		type kv struct {
+			k string
+			v int
+		}
+		var sorted []kv
+		for k, v := range categories {
+			sorted = append(sorted, kv{k, v})
+		}
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+		for _, item := range sorted {
+			fmt.Printf("  %-20s %s%d%s\n", item.k, ColorGreen, item.v, ColorReset)
+		}
+	}
+
+	if len(tagCounts) > 0 {
+		fmt.Println()
+		fmt.Printf("%sTags:%s\n", ColorCyan, ColorReset)
+		type kv struct {
+			k string
+			v int
+		}
+		var sorted []kv
+		for k, v := range tagCounts {
+			sorted = append(sorted, kv{k, v})
+		}
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+		tags := []string{}
+		for _, item := range sorted {
+			tags = append(tags, fmt.Sprintf("%s(%d)", item.k, item.v))
+		}
+		fmt.Printf("  %s\n", strings.Join(tags, "  "))
+	}
+
+	if len(filtered) == 0 {
+		fmt.Printf("%sNo logs found for this period.%s\n", ColorGray, ColorReset)
+	}
+}
+
+func showTagList() {
+	loadConfig()
+	logs := getLogsFromAllFiles()
+	tagCounts := map[string]int{}
+	for _, l := range logs {
+		for _, tag := range l.Tags {
+			tagCounts[tag]++
+		}
+	}
+	if len(tagCounts) == 0 {
+		fmt.Println("No tags found.")
+		return
+	}
+
+	type kv struct {
+		k string
+		v int
+	}
+	var sorted []kv
+	for k, v := range tagCounts {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+
+	fmt.Printf("%s%-24s | %s%s\n", ColorBold, "Tag", "Count", ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("=", 36) + ColorReset)
+	for _, item := range sorted {
+		fmt.Printf("%-24s | %s%d%s\n", item.k, ColorGreen, item.v, ColorReset)
+	}
+}
+
+func showStatsToday() {
+	loadConfig()
+	logs := getLogsFromAllFiles()
+	today := time.Now().Format("2006-01-02")
+	var todayLogs []LogEntry
+	for _, l := range logs {
+		if strings.HasPrefix(l.Timestamp, today) {
+			todayLogs = append(todayLogs, l)
+		}
+	}
+
+	tIn, tOut, auto, manual := 0, 0, 0, 0
+	for _, l := range todayLogs {
+		tIn += l.TokensIn
+		tOut += l.TokensOut
+		if l.Category == "AutoLog" {
+			auto++
+		} else {
+			manual++
+		}
+	}
+
+	fmt.Printf("%s📊 Today's Stats (%s)%s\n", ColorBold, today, ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("─", 40) + ColorReset)
+	fmt.Printf("Total Logs:   %s%d%s  (Auto: %d | Manual: %d)\n", ColorCyan, len(todayLogs), ColorReset, auto, manual)
+	fmt.Printf("Tokens In:    %s%d%s\n", ColorYellow, tIn, ColorReset)
+	fmt.Printf("Tokens Out:   %s%d%s\n", ColorYellow, tOut, ColorReset)
+	fmt.Printf("%sTotal Tokens: %s%d%s\n", ColorBold, ColorRed, tIn+tOut, ColorReset)
+}
+
 func exportLogs(format string) {
 	loadConfig()
 	logs := getLogsFromAllFiles()
@@ -1530,12 +1999,17 @@ func printUsage() {
 	printUsageItem(`trackcli search "keyword" [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Find logs by keyword with optional date range")
 	printUsageItem(`trackcli search model "model_name" [--from ...] [--to ...]`, "Find logs by AI model")
 	printUsageItem(`trackcli search tag "tag" [--from ...] [--to ...]`, "Find logs by tag")
+	printUsageItem(`trackcli watch`, "Monitor logs in real-time (useful for checking IDE/CLI integration)")
+	printUsageItem(`trackcli dashboard`, "Open the interactive multi-tab CLI dashboard")
+	printUsageItem(`trackcli summary [today|week|month]`, "Activity summary for today, this week, or this month")
+	printUsageItem(`trackcli tag list`, "Show all used tags and their counts")
+	printUsageItem(`trackcli pricing sync [all|model ...]`, "Fetch latest model pricing from OpenRouter and update config")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "🛠 Management" + ColorReset)
 	printUsageItem(`trackcli edit <index> [field] <value>`, "Edit a log entry; default field is message or answer")
 	printUsageItem(`trackcli delete <index>`, "Delete a single log entry")
-	printUsageItem(`trackcli stats | stats model | stats cost`, "Show total stats, per-model stats, or estimated cost")
+	printUsageItem(`trackcli stats | stats model | stats cost | stats today`, "Show total stats, per-model stats, estimated cost, or today's stats")
 	printUsageItem(`trackcli export [md|csv|json]`, "Export logs to Markdown, CSV, or JSON")
 	printUsageItem(`trackcli config [show|get|set|reset]`, "View or update app configuration")
 	printUsageItem(`trackcli info`, "Show config and storage paths")

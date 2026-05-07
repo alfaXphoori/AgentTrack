@@ -3,3 +3,6 @@ trackcli.exe
 *_logs.json
 *_logs.json.bak
 tracker_test_bin.exe
+.trackcli_watch_state/
+error.log
+trackcli
