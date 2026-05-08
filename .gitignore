@@ -1,8 +1,13 @@
 atrack
 atrack.exe
+trackcli
+trackcli.exe
 *_logs.json
 *_logs.json.bak
 tracker_test_bin.exe
 .atrack_watch_state/
+.trackcli_watch_state/
 error.log
-atrack
+*.swp
+*.swo
+.DS_Store

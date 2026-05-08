@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agenttrack.watcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/phoori/Library/CloudStorage/GoogleDrive-phoori.ch@ksu.ac.th/My Drive/KSU/Git/AgentTrack/scripts/auto-run-service.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/agenttrack-watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agenttrack-watcher.err</string>
+</dict>
+</plist>

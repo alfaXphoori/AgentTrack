@@ -2,7 +2,7 @@
 # gemini-cli-atrack.sh - Background watcher: auto-logs native Gemini CLI sessions to AgentTrack
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ATRACK_BIN="$SCRIPT_DIR/atrack"
+ATRACK_BIN="$(command -v atrack || echo "$SCRIPT_DIR/../atrack")"
 PROJECT_DIR="$(pwd)"
 POLL_INTERVAL=2
 STATE_DIR="$PROJECT_DIR/.atrack_watch_state"

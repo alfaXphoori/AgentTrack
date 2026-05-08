@@ -339,16 +339,29 @@ func TestTracker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Usage output failed: %v", err)
 	}
-	if !strings.Contains(out, "The Cross-Platform AI Activity Tracker") ||
+	if !strings.Contains(out, "Agent Track: The Cross-Platform AI Activity Tracker") ||
+		!strings.Contains(out, `atrack log "message"`) ||
+		!strings.Contains(out, `atrack list`) ||
+		!strings.Contains(out, `atrack dashboard`) ||
+		!strings.Contains(out, `atrack stats`) ||
+		!strings.Contains(out, `atrack summary`) {
+		t.Fatalf("Usage output missing essential commands: %s", out)
+	}
+
+	out, err = runCmd("help")
+	if err != nil {
+		t.Fatalf("Full usage output failed: %v", err)
+	}
+	if !strings.Contains(out, "Agent Track: Detailed Help") ||
 		!strings.Contains(out, `atrack log "message" [-c category] [-t tag1,tag2]`) ||
-		!strings.Contains(out, `atrack list category "category"|all`) ||
-		!strings.Contains(out, `atrack search tag "tag"`) ||
+		!strings.Contains(out, `atrack list category "name"|all`) ||
+		!strings.Contains(out, `atrack search model|tag "value"`) ||
 		!strings.Contains(out, `atrack edit <index> [field] <value>`) ||
-		!strings.Contains(out, `atrack stats | stats model | stats cost`) ||
-		!strings.Contains(out, `atrack pricing sync [all|model ...]`) ||
+		!strings.Contains(out, `atrack stats | model | cost | today`) ||
+		!strings.Contains(out, `atrack pricing sync [all|model]`) ||
 		!strings.Contains(out, `atrack export [md|csv|json]`) ||
 		!strings.Contains(out, "atrack config [show|get|set|reset]") {
-		t.Fatalf("Usage output missing new commands: %s", out)
+		t.Fatalf("Full usage output missing new commands: %s", out)
 	}
 
 	out, err = runCmd("config", "set", "display.max_logs_view", "25")
