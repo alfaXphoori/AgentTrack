@@ -1,8 +1,7 @@
 #!/bin/bash
 # gemini-cli-atrack.sh - Background watcher: auto-logs ALL Gemini CLI sessions to AgentTrack
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ATRACK_BIN="$(command -v atrack || echo "$SCRIPT_DIR/../atrack")"
+ATRACK_BIN="$(command -v atrack)"
 POLL_INTERVAL=2
 GEMINI_TMP="$HOME/.gemini/tmp"
 STATE_DIR="$HOME/.atrack/watch_state"
@@ -15,30 +14,22 @@ if [ -f "$LOCK_FILE" ] && kill -0 "$(cat $LOCK_FILE)" 2>/dev/null; then
 fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f $LOCK_FILE" EXIT
+trap '' HUP
 
 if [ ! -d "$GEMINI_TMP" ]; then
   echo "❌ ~/.gemini/tmp not found. Open gemini in any project first."
   exit 1
 fi
 
-printf "\033[1;32m🔍 AgentTrack Gemini Watcher started (all projects)\033[0m\n"
-printf "   Watching: %s\n" "$GEMINI_TMP"
-printf "   Poll every: ${POLL_INTERVAL}s | Press Ctrl+C to stop\n\n"
-
-# Process a session file: log any NEW complete Q&A pairs not yet tracked
-process_session() {
-  local FILE="$1"
-  local HASH=$(echo "$FILE" | md5)
-  local STATE_FILE="$STATE_DIR/${HASH}.logged"
-  local LOGGED=$(cat "$STATE_FILE" 2>/dev/null || echo "0")
-
-  python3 - "$FILE" "$LOGGED" "$ATRACK_BIN" "$STATE_FILE" << 'PYEOF'
+# Write python processor to a temp file (avoids heredoc SIGHUP in background)
+PY_SCRIPT="/tmp/atrack_gemini_processor.py"
+cat > "$PY_SCRIPT" << 'PYEOF'
 import json, os, sys, subprocess, datetime
 
-file_path   = sys.argv[1]
+file_path    = sys.argv[1]
 logged_pairs = int(sys.argv[2])
-atrack      = sys.argv[3]
-state_file  = sys.argv[4]
+atrack       = sys.argv[3]
+state_file   = sys.argv[4]
 
 def parse_iso(ts):
     try: return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
@@ -114,9 +105,19 @@ for p in new_pairs:
 with open(state_file, 'w') as f:
     f.write(str(len(pairs)))
 PYEOF
+
+printf "\033[1;32m🔍 AgentTrack Gemini Watcher started (all projects)\033[0m\n"
+printf "   Watching: %s\n" "$GEMINI_TMP"
+printf "   Poll every: ${POLL_INTERVAL}s | Press Ctrl+C to stop\n\n"
+
+process_session() {
+  local FILE="$1"
+  local HASH=$(echo "$FILE" | md5)
+  local STATE_FILE="$STATE_DIR/${HASH}.logged"
+  local LOGGED=$(cat "$STATE_FILE" 2>/dev/null || echo "0")
+  python3 "$PY_SCRIPT" "$FILE" "$LOGGED" "$ATRACK_BIN" "$STATE_FILE" 2>/dev/null
 }
 
-# Main poll loop — scan ALL project chats dirs
 while true; do
   for PROJECT_DIR in "$GEMINI_TMP"/*/; do
     CHATS_DIR="${PROJECT_DIR}chats"
