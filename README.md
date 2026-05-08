@@ -28,6 +28,39 @@ Token counts, costs, summaries, and a full TUI dashboard — all in your termina
 
 ---
 
+## 📦 Installation
+
+### macOS / Linux — Build from Source
+```bash
+git clone https://github.com/alfaXphoori/AgentTrack.git
+cd AgentTrack
+go build -o atrack .
+go install .
+```
+
+### macOS / Linux — via Go
+```bash
+go install github.com/alfaXphoori/AgentTrack@latest
+```
+
+### Linux — Pre-compiled Binary
+Download the latest release from [GitHub Releases](https://github.com/alfaXphoori/AgentTrack/releases):
+```bash
+tar -xzf atrack_linux_amd64.tar.gz
+sudo mv atrack /usr/local/bin/
+```
+
+### Windows — Build from Source
+```powershell
+git clone https://github.com/alfaXphoori/AgentTrack.git
+cd AgentTrack
+go build -o atrack.exe .
+```
+
+> See [docs/INSTALL.md](docs/INSTALL.md) for full platform instructions.
+
+---
+
 ## 🚀 Quick Start
 
 ```bash
