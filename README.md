@@ -1,8 +1,8 @@
-# AgentTrack — AI Activity Tracker `v0.14.0`
+# AgentTrack — AI Activity Tracker `v0.13.3`
 
 A cross-platform terminal tool for tracking tasks and AI interactions. Automatically logs questions, answers, models, and token usage from your AI CLI sessions — with real-time Gemini CLI watching, activity summaries, and tag management.
 
-## What's New in v0.14.0
+## What's New in v0.13.3
 - **Dashboard: Trends Tab** — 30-day daily activity bar chart (Logs / Tokens / Cost metrics)
 - **Dashboard: Cost Tab** — Cost summary (today/week/month/all-time) + per-model cost breakdown
 - **Dashboard: Stats Tab** — Redesigned as interactive ASCII bar chart per model with metric selector
