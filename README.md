@@ -7,12 +7,12 @@ A cross-platform terminal tool for tracking tasks and AI interactions. Automatic
 - **`atrack tag list`** — View all tags and their counts across all logs
 - **`atrack stats today`** — Quick today-only token and log stats
 - **`atrack pricing sync [all|model ...]`** — Pull the latest OpenRouter pricing into local config
-- **`gemini-watch.sh`** — Background watcher that auto-logs native Gemini CLI sessions in real-time (no wrapper needed)
+- **`gemini-cli-atrack.sh`** — Background watcher that auto-logs native Gemini CLI sessions in real-time (no wrapper needed)
 - **Bug fix:** Timezone-aware date filtering in summary commands
 
 ## Features
 - **Auto-Tracking:** Logs AI questions, answers, models, and token counts automatically
-- **Gemini CLI Native Watch:** `gemini-watch.sh` monitors live Gemini sessions without any wrapper
+- **Gemini CLI Native Watch:** `gemini-cli-atrack.sh` monitors live Gemini sessions without any wrapper
 - **Activity Summaries:** Daily, weekly, and monthly breakdowns with model and tag stats
 - **Tag System:** Tag logs and search/list by tag
 - **Manual Logging:** Add entries with categories, tags, and timestamps
@@ -133,16 +133,16 @@ atrack clear
 ## Gemini CLI Integration
 
 ### Option 1 — Native Watch (Recommended)
-Run `gemini-watch.sh` in the background. It monitors your Gemini session files and auto-logs every Q&A in real-time:
+Run `gemini-cli-atrack.sh` in the background. It monitors your Gemini session files and auto-logs every Q&A in real-time:
 ```bash
-./gemini-watch.sh &          # start background watcher
-gemini                       # use Gemini CLI normally — everything is tracked
+./scripts/gemini-cli-atrack.sh &    # start background watcher
+gemini                              # use Gemini CLI normally — everything is tracked
 ```
 
 ### Option 2 — Interactive Wrapper
-Use `gemitrack.sh` as a Gemini CLI wrapper with per-question logging and live model detection:
+Use `gemiatrack.sh` as a Gemini CLI wrapper with per-question logging and live model detection:
 ```bash
-./gemitrack.sh
+./scripts/gemiatrack.sh
 ```
 
 See [integrations/gemini.md](integrations/gemini.md) for full setup details.
@@ -151,7 +151,7 @@ See [integrations/gemini.md](integrations/gemini.md) for full setup details.
 
 | Agent | Method |
 |---|---|
-| **Gemini CLI** | `gemini-watch.sh` (native) or `gemitrack.sh` (wrapper) |
+| **Gemini CLI** | `gemini-cli-atrack.sh` (native) or `gemiatrack.sh` (wrapper) |
 | **GitHub Copilot** | See [integrations/copilot.md](integrations/copilot.md) |
 | **Cursor IDE** | `.cursorrules` |
 | **Cline (VS Code)** | `.clinerules` |
@@ -172,8 +172,10 @@ AgentTrack/
 ├── main_test.go          # Unit tests
 ├── go.mod                # Go module
 ├── atrack                # Compiled binary
-├── gemitrack.sh          # Gemini CLI interactive wrapper
-├── gemini-watch.sh       # Gemini CLI background session watcher
+├── scripts/
+│   ├── gemiatrack.sh          # Gemini CLI interactive wrapper
+│   ├── gemini-cli-atrack.sh   # Gemini CLI background session watcher
+│   └── atrack-base.sh         # Shared utility functions
 ├── INSTALL.md            # Cross-platform install guide
 ├── AGENTS.md             # AI agent auto-logging rules
 ├── integrations/         # Per-agent integration guides
