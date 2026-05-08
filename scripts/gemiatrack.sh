@@ -2,7 +2,7 @@
 # gemiatrack - Gemini CLI wrapper with AgentTrack auto-logging
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ATRACK_BIN="$SCRIPT_DIR/atrack"
+ATRACK_BIN="$(command -v atrack || echo "$SCRIPT_DIR/../atrack")"
 
 # Auto-detect live model from latest Gemini CLI session file
 detect_live_model() {
