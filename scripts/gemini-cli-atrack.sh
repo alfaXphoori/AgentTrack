@@ -1,38 +1,28 @@
 #!/bin/bash
-# gemini-cli-atrack.sh - Background watcher: auto-logs native Gemini CLI sessions to AgentTrack
+# gemini-cli-atrack.sh - Background watcher: auto-logs ALL Gemini CLI sessions to AgentTrack
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ATRACK_BIN="$(command -v atrack || echo "$SCRIPT_DIR/../atrack")"
-PROJECT_DIR="$(pwd)"
 POLL_INTERVAL=2
-STATE_DIR="$PROJECT_DIR/.atrack_watch_state"
+GEMINI_TMP="$HOME/.gemini/tmp"
+STATE_DIR="$HOME/.atrack/watch_state"
 mkdir -p "$STATE_DIR"
 
-# Find ~/.gemini/tmp/<project>/chats for current project
-CHATS_DIR=$(python3 - "$PROJECT_DIR" << 'PYEOF'
-import os, sys
-cwd = sys.argv[1]
-tmp_base = os.path.expanduser('~/.gemini/tmp')
-if not os.path.exists(tmp_base): sys.exit(1)
-for d in os.listdir(tmp_base):
-    pr = os.path.join(tmp_base, d, '.project_root')
-    if os.path.exists(pr):
-        with open(pr) as f:
-            if f.read().strip().lower() == cwd.lower():
-                print(os.path.join(tmp_base, d, 'chats'))
-                sys.exit(0)
-sys.exit(1)
-PYEOF
-)
+# Guard: only one instance running
+LOCK_FILE="/tmp/gemini-cli-atrack.lock"
+if [ -f "$LOCK_FILE" ] && kill -0 "$(cat $LOCK_FILE)" 2>/dev/null; then
+  exit 0
+fi
+echo $$ > "$LOCK_FILE"
+trap "rm -f $LOCK_FILE" EXIT
 
-if [ -z "$CHATS_DIR" ]; then
-  echo "❌ No Gemini session directory found for: $PROJECT_DIR"
-  echo "   Open gemini in this directory first, then re-run."
+if [ ! -d "$GEMINI_TMP" ]; then
+  echo "❌ ~/.gemini/tmp not found. Open gemini in any project first."
   exit 1
 fi
 
-printf "\033[1;32m🔍 AgentTrack Gemini Watcher started\033[0m\n"
-printf "   Watching: %s\n" "$CHATS_DIR"
+printf "\033[1;32m🔍 AgentTrack Gemini Watcher started (all projects)\033[0m\n"
+printf "   Watching: %s\n" "$GEMINI_TMP"
 printf "   Poll every: ${POLL_INTERVAL}s | Press Ctrl+C to stop\n\n"
 
 # Process a session file: log any NEW complete Q&A pairs not yet tracked
@@ -54,7 +44,6 @@ def parse_iso(ts):
     try: return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
     except: return None
 
-# Parse all turns from the session
 turns = []
 session_id = ""
 try:
@@ -67,7 +56,6 @@ try:
                 if 'sessionId' in d:
                     session_id = d['sessionId']
                     continue
-                
                 t = d.get('type')
                 model = d.get('model', '')
                 content = d.get('content', '')
@@ -77,28 +65,20 @@ try:
                     for call in d['toolCalls']:
                         if 'name' in call:
                             tools.append(call['name'])
-
                 if t in ('user', 'gemini') and (content or tools):
                     text = content if isinstance(content, str) else ''
                     if isinstance(content, list):
                         for c in content:
                             if isinstance(c, dict) and 'text' in c:
                                 text += c['text']
-                    
                     if text.strip() or tools:
-                        turns.append({
-                            'type': t, 
-                            'text': text.strip(), 
-                            'model': model, 
-                            'ts': parse_iso(ts),
-                            'tools': tools
-                        })
+                        turns.append({'type': t, 'text': text.strip(), 'model': model,
+                                      'ts': parse_iso(ts), 'tools': tools})
             except:
                 pass
 except:
     sys.exit(0)
 
-# Build complete Q&A pairs
 pairs = []
 i = 0
 last_model = 'gemini'
@@ -108,55 +88,43 @@ while i < len(turns):
             model = turns[i+1].get('model') or last_model
             duration = 0.0
             if turns[i]['ts'] and turns[i+1]['ts']:
-                delta = turns[i+1]['ts'] - turns[i]['ts']
-                duration = delta.total_seconds()
-            
-            pairs.append({
-                'question': turns[i]['text'],
-                'answer':   turns[i+1]['text'],
-                'model':    model,
-                'duration': duration,
-                'tools':    turns[i+1].get('tools', [])
-            })
+                duration = (turns[i+1]['ts'] - turns[i]['ts']).total_seconds()
+            pairs.append({'question': turns[i]['text'], 'answer': turns[i+1]['text'],
+                          'model': model, 'duration': duration, 'tools': turns[i+1].get('tools', [])})
             last_model = model
             i += 2
         else:
-            i += 1  # user turn with no response yet — skip
+            i += 1
     else:
         last_model = turns[i].get('model') or last_model
         i += 1
 
-# Log only NEW pairs
 new_pairs = pairs[logged_pairs:]
 for p in new_pairs:
-    q  = p['question']
-    a  = p['answer']
-    m  = p['model']
-    dur = p['duration']
-    tools = ",".join(p['tools'])
+    q, a, m = p['question'], p['answer'], p['model']
+    dur, tools = p['duration'], ",".join(p['tools'])
     ti = max(1, len(q) // 4)
     to = max(1, len(a) // 4)
     summary = a.split('\n')[0][:80]
-    
-    # Position: auto q a m ti to dur sid status tools tags
-    tags = "gemini-cli"
-    cmd = [atrack, 'auto', q, summary, m, str(ti), str(to), str(dur), session_id, 'success', tools, tags]
+    cmd = [atrack, 'auto', q, summary, m, str(ti), str(to), str(dur), session_id, 'success', tools, 'gemini-cli']
     r = subprocess.run(cmd, capture_output=True, text=True)
-    
     icon = "✅" if r.returncode == 0 else "⚠️ "
     print(f"{icon} [{m}] [{dur:.2f}s] {q[:60]}")
 
-# Save updated count
 with open(state_file, 'w') as f:
     f.write(str(len(pairs)))
 PYEOF
 }
 
-# Main poll loop
+# Main poll loop — scan ALL project chats dirs
 while true; do
-  for SESSION in "$CHATS_DIR"/session-*.jsonl; do
-    [ -f "$SESSION" ] || continue
-    process_session "$SESSION"
+  for PROJECT_DIR in "$GEMINI_TMP"/*/; do
+    CHATS_DIR="${PROJECT_DIR}chats"
+    [ -d "$CHATS_DIR" ] || continue
+    for SESSION in "$CHATS_DIR"/session-*.jsonl; do
+      [ -f "$SESSION" ] || continue
+      process_session "$SESSION"
+    done
   done
   sleep "$POLL_INTERVAL"
 done
