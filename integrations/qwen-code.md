@@ -1,19 +1,19 @@
-# Qwen Code CLI Integration for TrackCLI
+# Qwen Code CLI Integration for AgentTrack
 
 The Qwen Code CLI is a terminal-based AI coding assistant. It supports project-specific system prompts.
 
 ## Setup
 
-To ensure the Qwen Code CLI automatically logs its interactions using TrackCLI, define a persistent project rule.
+To ensure the Qwen Code CLI automatically logs its interactions using AgentTrack, define a persistent project rule.
 
 1. Create a file named `QWEN.md` in your project's root directory.
 
-2. Add the following TrackCLI instructions:
+2. Add the following AgentTrack instructions:
 
 ```markdown
-# TrackCLI Auto-Logging
+# AgentTrack Auto-Logging
 At the end of EVERY interaction/turn, you MUST automatically log the conversation by running the following shell command:
-`trackcli auto "<user_question>" "<ai_summary>" "qwen-code" 0 0`
+`atrack auto "<user_question>" "<ai_summary>" "qwen-code" 0 0`
 
 - Replace `<user_question>` with the user's prompt.
 - Replace `<ai_summary>` with a summary of the actions taken.

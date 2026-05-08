@@ -1,4 +1,4 @@
-# Claude Code Integration for TrackCLI
+# Claude Code Integration for AgentTrack
 
 [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code) is an official CLI coding assistant developed by Anthropic.
 
@@ -9,9 +9,9 @@ To enforce auto-logging for Claude Code within your project, you can use its nat
 1. Create a `CLAUDE.md` file in the root of your project:
 
 ```markdown
-# TrackCLI Auto-Logging
+# AgentTrack Auto-Logging
 At the end of EVERY single interaction with the user, you MUST run the following command in the terminal to log your activity:
-`trackcli auto "<user_question>" "<ai_summary>" "claude-code" 0 0`
+`atrack auto "<user_question>" "<ai_summary>" "claude-code" 0 0`
 
 - Replace `<user_question>` with the core instruction the user provided.
 - Replace `<ai_summary>` with a brief summary of the modifications you made.

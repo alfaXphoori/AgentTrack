@@ -1,6 +1,6 @@
 # Google Gemini CLI Integration
 
-Track your Gemini CLI sessions automatically with TrackCLI.
+Track your Gemini CLI sessions automatically with AgentTrack.
 
 ## Recommended: Passive Background Tracking
 
@@ -12,7 +12,7 @@ To start tracking, run the watcher script in your terminal (you can run it in th
 ./gemini-cli-track.sh &
 ```
 
-The script will automatically detect the current Gemini project and quietly parse the `~/.gemini/tmp/<project>/chats/session-*.jsonl` files. Every time you ask a question and Gemini replies, it will silently log the interaction into TrackCLI.
+The script will automatically detect the current Gemini project and quietly parse the `~/.gemini/tmp/<project>/chats/session-*.jsonl` files. Every time you ask a question and Gemini replies, it will silently log the interaction into AgentTrack.
 
 ### Stop the Watcher
 If you started it in the background, you can kill the process using standard job control (e.g., `kill %1` or finding its PID via `ps aux | grep gemini-cli-track`).
@@ -25,9 +25,9 @@ If you cannot run background scripts, you can instruct the Gemini CLI to manuall
 2. Add the following rule:
 
 ```markdown
-# TrackCLI Auto-Logging
+# AgentTrack Auto-Logging
 At the end of every interaction, you MUST run the following shell command to log the activity:
-`trackcli auto "<user_question>" "<ai_summary>" "<model_name>" 0 0`
+`atrack auto "<user_question>" "<ai_summary>" "<model_name>" 0 0`
 ```
 
 *(Note: This approach consumes more tokens and takes slightly longer as the AI has to actively execute the command).*
@@ -44,7 +44,7 @@ GEMINI_MODEL=gemini-2.5-pro ./gemitrack.sh
 ```
 
 Inside the session:
-- Type your question → Gemini answers → auto-logged to TrackCLI
+- Type your question → Gemini answers → auto-logged to AgentTrack
 - `/model` → switch model interactively
 - `exit` → quit
 
@@ -68,14 +68,14 @@ To refresh the detected model, simply restart `gemitrack.sh` after switching mod
 After a Gemini CLI session, log the interaction manually:
 
 ```bash
-trackcli auto "Your question here" "Summary of Gemini's answer" "gemini-2.5-flash" <tokens_in> <tokens_out>
+atrack auto "Your question here" "Summary of Gemini's answer" "gemini-2.5-flash" <tokens_in> <tokens_out>
 ```
 
 ## Shell Alias
 
 Add to your `.zshrc` or `.bashrc` for quick logging:
 ```bash
-alias glog='trackcli auto'
+alias glog='atrack auto'
 ```
 
 Then use:
@@ -87,16 +87,16 @@ glog "What is Docker?" "Docker is a containerization platform" "gemini-2.0-flash
 
 ```bash
 # See all models used
-trackcli list model all
+atrack list model all
 
 # Filter logs by Gemini model
-trackcli list model "gemini"
+atrack list model "gemini"
 
 # Search for Gemini-related logs
-trackcli search model "gemini-2.0-flash"
+atrack search model "gemini-2.0-flash"
 
 # View cost stats
-trackcli stats cost
+atrack stats cost
 ```
 
 ## Available Gemini Models

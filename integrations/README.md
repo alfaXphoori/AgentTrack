@@ -1,6 +1,6 @@
-# TrackCLI AI Integrations
+# AgentTrack AI Integrations
 
-This directory contains integration guides and rule files to help various AI coding assistants and CLIs automatically log their activities using TrackCLI.
+This directory contains integration guides and rule files to help various AI coding assistants and CLIs automatically log their activities using AgentTrack.
 
 ## Supported Integrations
 
@@ -11,7 +11,7 @@ This directory contains integration guides and rule files to help various AI cod
 | **Cline (VS Code)** | Custom Instructions (`.clinerules`) | [cline.md](cline.md) |
 | **GitHub Copilot CLI** | Shell Aliases / Manual | [copilot.md](copilot.md) |
 | **Aider** | Project Conventions (`.aider.rules.md`) | [aider.md](aider.md) |
-| **Open Interpreter** | Custom Profile (`trackcli.yaml`) | [open-interpreter.md](open-interpreter.md) |
+| **Open Interpreter** | Custom Profile (`atrack.yaml`) | [open-interpreter.md](open-interpreter.md) |
 | **Shell-GPT (sgpt)** | Custom Roles | [sgpt.md](sgpt.md) |
 | **Claude Code** | Project Instructions (`CLAUDE.md`) | [claude-code.md](claude-code.md) |
 | **Qwen Code CLI** | Custom System Prompts (`QWEN.md`) | [qwen-code.md](qwen-code.md) |
@@ -29,9 +29,9 @@ Most AI agents support a concept of "Project Instructions", "Custom Instructions
 To integrate a new AI agent, we simply inject a strict behavioral rule into its context:
 
 ```markdown
-# TrackCLI Auto-Logging
+# AgentTrack Auto-Logging
 At the end of every interaction, you MUST run the following command to log the activity:
-`trackcli auto "<user_question>" "<ai_summary>" "<model_name>" 0 0`
+`atrack auto "<user_question>" "<ai_summary>" "<model_name>" 0 0`
 ```
 
 ## Adding a New Integration

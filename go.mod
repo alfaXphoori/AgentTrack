@@ -1,4 +1,4 @@
-module trackcli
+module github.com/alfaXphoori/AgentTrack
 
 go 1.26.2
 

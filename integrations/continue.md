@@ -1,4 +1,4 @@
-# Continue.dev Integration for TrackCLI
+# Continue.dev Integration for AgentTrack
 
 [Continue.dev](https://continue.dev/) is an open-source AI code assistant that works as an extension in VS Code and JetBrains IDEs.
 
@@ -13,7 +13,7 @@ Open `~/.continue/config.json` and add or modify the `systemMessage` property:
 
 ```json
 {
-  "systemMessage": "You are an expert AI programmer. At the end of every interaction where you suggest or modify code, you MUST instruct the user to run, or attempt to run the following command if terminal access is available: `trackcli auto \"<user_question>\" \"<ai_summary>\" \"continue-dev\" 0 0`"
+  "systemMessage": "You are an expert AI programmer. At the end of every interaction where you suggest or modify code, you MUST instruct the user to run, or attempt to run the following command if terminal access is available: `atrack auto \"<user_question>\" \"<ai_summary>\" \"continue-dev\" 0 0`"
 }
 ```
 
@@ -25,8 +25,8 @@ You can create a custom slash command in `config.json` specifically for logging:
   "customCommands": [
     {
       "name": "log",
-      "prompt": "Summarize our recent conversation and generate the exact shell command to log it using TrackCLI: `trackcli auto \"<user_question>\" \"<ai_summary>\" \"continue-dev\" 0 0`. Do not execute it, just provide the command.",
-      "description": "Generate a TrackCLI log command for the session."
+      "prompt": "Summarize our recent conversation and generate the exact shell command to log it using AgentTrack: `atrack auto \"<user_question>\" \"<ai_summary>\" \"continue-dev\" 0 0`. Do not execute it, just provide the command.",
+      "description": "Generate a AgentTrack log command for the session."
     }
   ]
 }

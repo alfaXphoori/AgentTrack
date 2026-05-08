@@ -12,7 +12,7 @@ func TestGemitrack(t *testing.T) {
 	cwd, _ := os.Getwd()
 
 	// Check gemitrack.sh exists and is executable
-	scriptPath := filepath.Join(cwd, "gemitrack.sh")
+	scriptPath := filepath.Join(cwd, "scripts", "gemiatrack.sh")
 	info, err := os.Stat(scriptPath)
 	if err != nil {
 		t.Fatalf("gemitrack.sh not found: %v", err)
@@ -33,7 +33,7 @@ func TestGemitrack(t *testing.T) {
 		keyword string
 	}{
 		{"auto-detect model function", "detect_live_model"},
-		{"trackcli binary reference", "TRACKCLI_BIN"},
+		{"atrack binary reference", "ATRACK_BIN"},
 		{"auto log call", `auto "$QUESTION"`},
 		{"model priority env var", "GEMINI_MODEL"},
 		{"session file path", ".gemini/tmp"},

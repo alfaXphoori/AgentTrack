@@ -1,4 +1,4 @@
-# Windsurf Editor Integration for TrackCLI
+# Windsurf Editor Integration for AgentTrack
 
 [Windsurf](https://codeium.com/windsurf) is an AI-powered IDE by Codeium featuring the Cascade AI agent. 
 
@@ -11,9 +11,9 @@ You can define project rules for Windsurf to instruct the Cascade agent to autom
 2. Add the following content to the file:
 
 ```markdown
-# TrackCLI Auto-Logging
+# AgentTrack Auto-Logging
 Cascade, at the end of every coding task or interaction with the user, you MUST execute the following command in the terminal to log your activity:
-`trackcli auto "<user_question>" "<ai_summary>" "windsurf-cascade" 0 0`
+`atrack auto "<user_question>" "<ai_summary>" "windsurf-cascade" 0 0`
 
 - Replace `<user_question>` with the user's initial prompt or request.
 - Replace `<ai_summary>` with a concise summary of the code you wrote or modified.

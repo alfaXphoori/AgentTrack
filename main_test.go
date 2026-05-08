@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,8 +14,8 @@ import (
 
 func setupTestDB() string {
 	cwd, _ := os.Getwd()
-	dbPath := filepath.Join(cwd, "trackcli_logs.json")
-	bakPath := filepath.Join(cwd, "trackcli_logs.json.bak")
+	dbPath := filepath.Join(cwd, "atrack_logs.json")
+	bakPath := filepath.Join(cwd, "atrack_logs.json.bak")
 	if _, err := os.Stat(dbPath); err == nil {
 		data, _ := os.ReadFile(dbPath)
 		os.WriteFile(bakPath, data, 0644)
@@ -24,7 +25,7 @@ func setupTestDB() string {
 
 func restoreTestDB(bakPath string) {
 	cwd, _ := os.Getwd()
-	dbPath := filepath.Join(cwd, "trackcli_logs.json")
+	dbPath := filepath.Join(cwd, "atrack_logs.json")
 	if _, err := os.Stat(bakPath); err == nil {
 		data, _ := os.ReadFile(bakPath)
 		os.WriteFile(dbPath, data, 0644)
@@ -84,18 +85,21 @@ func TestTracker(t *testing.T) {
 	openRouterURL := ""
 	runCmd := func(args ...string) (string, error) {
 		cmd := exec.Command("./tracker_test_bin.exe", args...)
-		env := append(os.Environ(), "TRACKCLI_HOME="+cwd)
+		env := append(os.Environ(), "ATRACK_HOME="+cwd)
 		if openRouterURL != "" {
-			env = append(env, "TRACKCLI_OPENROUTER_MODELS_URL="+openRouterURL)
+			env = append(env, "ATRACK_OPENROUTER_MODELS_URL="+openRouterURL)
 		}
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("Command failed: %s %v\nOutput: %s\n", strings.Join(args, " "), err, string(out))
+		}
 		return string(out), err
 	}
 
 	testConfig := `{
 		"storage": {
-			"log_file_prefix": "trackcli_logs",
+			"log_file_prefix": "atrack_logs",
 			"rotation": "none"
 		}
 	}`
@@ -106,7 +110,7 @@ func TestTracker(t *testing.T) {
 		t.Fatalf("Failed to clear logs: %v", err)
 	}
 
-	dbPath := filepath.Join(cwd, "trackcli_logs.json")
+	dbPath := filepath.Join(cwd, "atrack_logs.json")
 
 	if _, err := runCmd("log", "Test message", "-c", "TestCategory", "-t", "bug,backend"); err != nil {
 		t.Fatalf("Log command failed: %v", err)
@@ -336,14 +340,14 @@ func TestTracker(t *testing.T) {
 		t.Fatalf("Usage output failed: %v", err)
 	}
 	if !strings.Contains(out, "The Cross-Platform AI Activity Tracker") ||
-		!strings.Contains(out, `trackcli log "message" [-c category] [-t tag1,tag2]`) ||
-		!strings.Contains(out, `trackcli list category "category"|all`) ||
-		!strings.Contains(out, `trackcli search tag "tag"`) ||
-		!strings.Contains(out, `trackcli edit <index> [field] <value>`) ||
-		!strings.Contains(out, `trackcli stats | stats model | stats cost`) ||
-		!strings.Contains(out, `trackcli pricing sync [all|model ...]`) ||
-		!strings.Contains(out, `trackcli export [md|csv|json]`) ||
-		!strings.Contains(out, "trackcli config [show|get|set|reset]") {
+		!strings.Contains(out, `atrack log "message" [-c category] [-t tag1,tag2]`) ||
+		!strings.Contains(out, `atrack list category "category"|all`) ||
+		!strings.Contains(out, `atrack search tag "tag"`) ||
+		!strings.Contains(out, `atrack edit <index> [field] <value>`) ||
+		!strings.Contains(out, `atrack stats | stats model | stats cost`) ||
+		!strings.Contains(out, `atrack pricing sync [all|model ...]`) ||
+		!strings.Contains(out, `atrack export [md|csv|json]`) ||
+		!strings.Contains(out, "atrack config [show|get|set|reset]") {
 		t.Fatalf("Usage output missing new commands: %s", out)
 	}
 

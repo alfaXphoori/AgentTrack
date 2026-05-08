@@ -23,7 +23,7 @@ func runDashboard() {
 	// Header
 	header := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText(fmt.Sprintf("[yellow::b]TrackCLI Dashboard[white] | [green]%s", time.Now().Format("2006-01-02 15:04")))
+		SetText(fmt.Sprintf("[yellow::b]AgentTrack Dashboard[white] | [green]%s", time.Now().Format("2006-01-02 15:04")))
 
 	// Pages for the tabs
 	infoPages := tview.NewPages()
@@ -373,7 +373,7 @@ func createWatchTab(app *tview.Application) tview.Primitive {
 	
 	textView.SetBorder(true).SetTitle(" Live Watch ")
 	
-	fmt.Fprintf(textView, "[cyan]👀 Watching for new TrackCLI logs in real-time...[white]\n\n")
+	fmt.Fprintf(textView, "[cyan]👀 Watching for new AgentTrack logs in real-time...[white]\n\n")
 
 	go func() {
 		lastCount := len(getLogsFromAllFiles())

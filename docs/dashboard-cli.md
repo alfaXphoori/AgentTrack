@@ -1,9 +1,9 @@
-# TrackCLI Dashboard Design Concept
+# AgentTrack Dashboard Design Concept
 
-สำหรับการสร้างหน้า Dashboard CLI แบบหลายแท็บ (Multi-tab CLI Dashboard) ให้กับโปรเจกต์ **TrackCLI** ซึ่งเป็นเครื่องมือติดตามการใช้งาน AI Agent โครงสร้าง Content ที่จะช่วยให้ผู้ใช้ดูข้อมูลได้ครอบคลุมและใช้งานง่าย แบ่งออกเป็น 5-6 แท็บหลัก ดังนี้
+สำหรับการสร้างหน้า Dashboard CLI แบบหลายแท็บ (Multi-tab CLI Dashboard) ให้กับโปรเจกต์ **AgentTrack** ซึ่งเป็นเครื่องมือติดตามการใช้งาน AI Agent โครงสร้าง Content ที่จะช่วยให้ผู้ใช้ดูข้อมูลได้ครอบคลุมและใช้งานง่าย แบ่งออกเป็น 5-6 แท็บหลัก ดังนี้
 
 ## 📱 โครงสร้าง UI เบื้องต้น
-- **Header:** ชื่อโปรเจกต์ `TrackCLI Dashboard`, วันที่/เวลาปัจจุบัน, สถานะของ Background Watcher (เช่น 🟢 `gemini-watch: active`)
+- **Header:** ชื่อโปรเจกต์ `AgentTrack Dashboard`, วันที่/เวลาปัจจุบัน, สถานะของ Background Watcher (เช่น 🟢 `gemini-watch: active`)
 - **Tab Bar:** แถบเมนูด้านบน [1] Overview  [2] Logs  [3] Stats & Cost  [4] Tags  [5] Live Watch
 - **Main Content Area:** พื้นที่แสดงเนื้อหาของแท็บที่เลือก
 - **Footer/Status Bar:** คีย์ลัดสำหรับการควบคุม (เช่น `[Tab] เปลี่ยนหน้า`, `[ / ] ค้นหา`, `[Enter] ดูรายละเอียด`, `[ q ] ออก`)
@@ -22,7 +22,7 @@
   * แสดงประวัติ 5 รายการล่าสุด (เวลา, โมเดลที่ใช้, หัวข้อ/คำถามสั้นๆ)
 
 ## 📑 Tab 2: Logs / History (ประวัติการใช้งาน)
-หน้าต่างสำหรับดูและค้นหาประวัติย้อนหลัง (เหมือนการใช้ `trackcli list` แต่มี UI ให้เลื่อนดูได้)
+หน้าต่างสำหรับดูและค้นหาประวัติย้อนหลัง (เหมือนการใช้ `atrack list` แต่มี UI ให้เลื่อนดูได้)
 * **Data Table (ตารางข้อมูล):**
   * คอลัมน์: `[เวลา] | [Model] | [หมวดหมู่/Tag] | [Tokens] | [คำถาม/เนื้อหาสั้นๆ]`
 * **Interactive Elements:**
@@ -49,7 +49,7 @@
 * **Interactive:** เลือกกดที่ Tag หรือ Category เพื่อกระโดดไปยังแท็บ "Logs" ที่ถูก Filter ไว้แล้ว
 
 ## 📑 Tab 5: Live Watch (มอนิเตอร์แบบเรียลไทม์)
-ดึงความสามารถของคำสั่ง `trackcli watch` มาไว้ใน Dashboard
+ดึงความสามารถของคำสั่ง `atrack watch` มาไว้ใน Dashboard
 * **Live Feed:**
   * หน้าจอ Terminal เปล่าๆ ที่คอยพ่น Log ใหม่ขึ้นมาทันทีที่มีการคุยกับ AI (เช่น จาก `gemini-watch.sh` หรือ agent ตัวอื่นๆ)
   * เหมาะสำหรับเปิดทิ้งไว้ที่จอข้างๆ ตอนกำลังเขียนโค้ด เพื่อดูว่าเบื้องหลัง Agent ใช้ Token ไปเท่าไหร่

@@ -116,16 +116,18 @@ type OpenRouterModelsResponse struct {
 }
 
 const splashBanner = `
- _____               _   _____  _      _____
-|_   _|             | | /  __ \| |    |_   _|
-  | | _ __ __ _  ___| | | /  \/| |      | |
-  | || '__/ _` + "`" + ` |/ __| | | |    | |      | |
-  | || | | (_| | (__| | | \__/\| |____ _| |_
-  \_/|_|  \__,_|\___|_|  \____/\_____/\___/`
+    ___                        _ _____               _    
+   / _ \                      | |_   _|             | |   
+  / /_\ \ __ _  ___ _ __  ___| | | | _ __ __ _  ___| | __
+  |  _  |/ _` + "`" + ` |/ _ \ '_ \/ __| | | || '__/ _` + "`" + ` |/ __| |/ /
+  | | | | (_| |  __/ | | \__ \ | | || | | (_| | (__|   < 
+  \_| |_/\__, |\___|_| |_|___/_| \_/_|  \__,_|\___|_|\_\
+          __/ |                                          
+         |___/                                           `
 
 func defaultConfig() Config {
 	return Config{
-		ProjectName:  "TrackCLI Activity Tracker",
+		ProjectName:  "AgentTrack Activity Tracker",
 		DefaultModel: "gemini-1.5-flash",
 		Timezone:     "Asia/Bangkok",
 		TokenEstimation: TokenEstimationConfig{
@@ -138,7 +140,7 @@ func defaultConfig() Config {
 			MaxLogsView:   50,
 		},
 		Storage: StorageConfig{
-			LogFilePrefix: "trackcli_logs",
+			LogFilePrefix: "atrack_logs",
 			Rotation:      "monthly",
 		},
 		Pricing: PricingConfig{
@@ -149,14 +151,14 @@ func defaultConfig() Config {
 }
 
 func getAppDir() string {
-	if envDir := os.Getenv("TRACKCLI_HOME"); envDir != "" {
+	if envDir := os.Getenv("ATRACK_HOME"); envDir != "" {
 		return envDir
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "."
 	}
-	dir := filepath.Join(home, ".trackcli")
+	dir := filepath.Join(home, ".atrack")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		os.MkdirAll(dir, 0755)
 	}
@@ -436,12 +438,12 @@ func registerOpenRouterAlias(prices map[string]ModelPrice, id string, price Mode
 }
 
 func fetchOpenRouterPricingData() (map[string]ModelPrice, map[string]ModelPrice, error) {
-	url := os.Getenv("TRACKCLI_OPENROUTER_MODELS_URL")
+	url := os.Getenv("ATRACK_OPENROUTER_MODELS_URL")
 	if url == "" {
 		url = "https://openrouter.ai/api/v1/models"
 	}
 	if strings.EqualFold(url, "off") {
-		return nil, nil, fmt.Errorf("OpenRouter pricing sync is disabled via TRACKCLI_OPENROUTER_MODELS_URL=off")
+		return nil, nil, fmt.Errorf("OpenRouter pricing sync is disabled via ATRACK_OPENROUTER_MODELS_URL=off")
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -542,7 +544,7 @@ func syncOpenRouterPricing(args []string) {
 	if len(args) == 0 {
 		targets = collectModelNamesForPricingSync()
 		if len(targets) == 0 {
-			fmt.Println("No models found in logs/config to sync. Use `trackcli pricing sync all` or specify model names.")
+			fmt.Println("No models found in logs/config to sync. Use `atrack pricing sync all` or specify model names.")
 			return
 		}
 	} else if len(args) == 1 && strings.EqualFold(args[0], "all") {
@@ -968,7 +970,7 @@ func deleteLog(index int) {
 
 func editLog(index int, args []string) {
 	if len(args) == 0 {
-		fmt.Println("Error: Usage: trackcli edit <index> [field] <value>")
+		fmt.Println("Error: Usage: atrack edit <index> [field] <value>")
 		return
 	}
 
@@ -1027,7 +1029,7 @@ func clearLogs() {
 
 func watchLogs() {
 	loadConfig()
-	fmt.Println(ColorCyan + "👀 Watching for new TrackCLI logs in real-time... (Press Ctrl+C to stop)" + ColorReset)
+	fmt.Println(ColorCyan + "👀 Watching for new AgentTrack logs in real-time... (Press Ctrl+C to stop)" + ColorReset)
 	fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
 
 	lastCount := len(getLogsFromAllFiles())
@@ -1176,19 +1178,19 @@ func main() {
 			return
 		case "model":
 			if len(remaining) < 2 {
-				fmt.Println("Error: Usage: trackcli list model <model> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
+				fmt.Println("Error: Usage: atrack list model <model> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
 				return
 			}
 			listLogsByModel(remaining[1], dateFilter)
 		case "category":
 			if len(remaining) < 2 {
-				fmt.Println("Error: Usage: trackcli list category <category> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
+				fmt.Println("Error: Usage: atrack list category <category> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
 				return
 			}
 			listLogsByCategory(remaining[1], dateFilter)
 		default:
 			if len(remaining) > 1 {
-				fmt.Println("Error: Usage: trackcli list [date] [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
+				fmt.Println("Error: Usage: atrack list [date] [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
 				return
 			}
 			dateFilter.Exact = remaining[0]
@@ -1209,7 +1211,7 @@ func main() {
 
 	case "edit":
 		if len(os.Args) < 4 {
-			fmt.Println("Error: Usage: trackcli edit <index> [field] <value>")
+			fmt.Println("Error: Usage: atrack edit <index> [field] <value>")
 			return
 		}
 		idx, err := strconv.Atoi(os.Args[2])
@@ -1232,13 +1234,13 @@ func main() {
 		switch strings.ToLower(remaining[0]) {
 		case "model":
 			if len(remaining) < 2 {
-				fmt.Println("Error: Usage: trackcli search model <model> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
+				fmt.Println("Error: Usage: atrack search model <model> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
 				return
 			}
 			searchLogsByModel(strings.Join(remaining[1:], " "), dateFilter)
 		case "tag":
 			if len(remaining) < 2 {
-				fmt.Println("Error: Usage: trackcli search tag <tag> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
+				fmt.Println("Error: Usage: atrack search tag <tag> [--from YYYY-MM-DD] [--to YYYY-MM-DD]")
 				return
 			}
 			searchLogsByTag(strings.Join(remaining[1:], " "), dateFilter)
@@ -1260,7 +1262,7 @@ func main() {
 		if len(os.Args) > 2 && strings.ToLower(os.Args[2]) == "list" {
 			showTagList()
 		} else {
-			fmt.Println("Usage: trackcli tag list")
+			fmt.Println("Usage: atrack tag list")
 		}
 
 	case "watch":
@@ -1271,13 +1273,13 @@ func main() {
 
 	case "pricing":
 		if len(os.Args) < 3 || !strings.EqualFold(os.Args[2], "sync") {
-			fmt.Println("Usage: trackcli pricing sync [all|model ...]")
+			fmt.Println("Usage: atrack pricing sync [all|model ...]")
 			return
 		}
 		syncOpenRouterPricing(os.Args[3:])
 
 	case "info":
-		fmt.Printf("TrackCLI Global CLI\n")
+		fmt.Printf("AgentTrack Global CLI\n")
 		fmt.Printf("Version:       %s\n", Version)
 		fmt.Printf("App Directory: %s\n", appDir)
 		fmt.Printf("Config File:   %s\n", filepath.Join(appDir, "config.json"))
@@ -1285,7 +1287,7 @@ func main() {
 		fmt.Printf("Total Files:   %d\n", len(getAllLogFiles()))
 
 	case "version":
-		fmt.Printf("TrackCLI version %s\n", Version)
+		fmt.Printf("AgentTrack version %s\n", Version)
 
 	case "stats":
 		if len(os.Args) > 2 {
@@ -1318,13 +1320,13 @@ func main() {
 		switch os.Args[2] {
 		case "set":
 			if len(os.Args) < 5 {
-				fmt.Println("Error: Usage: trackcli config set <key> <value>")
+				fmt.Println("Error: Usage: atrack config set <key> <value>")
 				return
 			}
 			updateConfig(os.Args[3], os.Args[4:])
 		case "get":
 			if len(os.Args) < 4 {
-				fmt.Println("Error: Usage: trackcli config get <key>")
+				fmt.Println("Error: Usage: atrack config get <key>")
 				return
 			}
 			showConfigValue(os.Args[3])
@@ -1365,13 +1367,13 @@ func showConfig() {
 
 func showConfigHelp() {
 	fmt.Println("Config commands:")
-	fmt.Println("  trackcli config show")
+	fmt.Println("  atrack config show")
 	fmt.Println("      Show the full config file")
-	fmt.Println("  trackcli config get <key>")
+	fmt.Println("  atrack config get <key>")
 	fmt.Println("      Show one config value")
-	fmt.Println("  trackcli config set <key> <value>")
+	fmt.Println("  atrack config set <key> <value>")
 	fmt.Println("      Update one config value")
-	fmt.Println("  trackcli config reset")
+	fmt.Println("  atrack config reset")
 	fmt.Println("      Reset config to defaults")
 	fmt.Println()
 	fmt.Println("Available keys:")
@@ -1637,7 +1639,7 @@ func showStats() {
 		tOut += log.TokensOut
 	}
 
-	fmt.Printf(ColorBold + "📊 TrackCLI Usage Statistics (Across All Files)\n" + ColorReset)
+	fmt.Printf(ColorBold + "📊 AgentTrack Usage Statistics (Across All Files)\n" + ColorReset)
 	fmt.Println(ColorGray + strings.Repeat("-", 40) + ColorReset)
 	fmt.Printf("Total Logs:       "+ColorCyan+"%d"+ColorReset+"\n", total)
 	fmt.Printf("  - Auto:         "+ColorGreen+"%d"+ColorReset+"\n", autoLogs)
@@ -1903,7 +1905,7 @@ func exportLogs(format string) {
 		format = "md"
 	}
 
-	filename := fmt.Sprintf("trackcli_export_%s.%s", time.Now().Format("20060102_150405"), format)
+	filename := fmt.Sprintf("atrack_export_%s.%s", time.Now().Format("20060102_150405"), format)
 	file, err := os.Create(filename)
 	if err != nil {
 		fmt.Printf("Error creating export file: %v\n", err)
@@ -1913,7 +1915,7 @@ func exportLogs(format string) {
 
 	switch format {
 	case "md":
-		file.WriteString("# TrackCLI Activity Export\n\n")
+		file.WriteString("# AgentTrack Activity Export\n\n")
 		file.WriteString(fmt.Sprintf("Exported on: %s\n\n", time.Now().Format(time.RFC1123)))
 
 		for _, log := range logs {
@@ -1986,40 +1988,40 @@ func printUsage() {
 	fmt.Printf("            %s%sv%s%s | The Cross-Platform AI Activity Tracker\n\n", ColorGreen, ColorBold, Version, ColorReset)
 
 	fmt.Println(ColorYellow + "📚 Usage" + ColorReset)
-	fmt.Println("  trackcli <command> [arguments]")
+	fmt.Println("  atrack <command> [arguments]")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "✨ Most common" + ColorReset)
-	printUsageItem(`trackcli log "message" [-c category] [-t tag1,tag2]`, "Add a manual log entry with optional tags")
-	printUsageItem(`trackcli auto "question" "answer" "model" tokens_in tokens_out`, "Save an AI Q&A log")
-	printUsageItem(`trackcli list [date] [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Show logs with exact-date or date-range filters")
-	printUsageItem(`trackcli list last`, "Quickly view only the most recent log entry")
-	printUsageItem(`trackcli list model "model_name"|all [--from ...] [--to ...]`, "List logs for one model, or summarize all models")
-	printUsageItem(`trackcli list category "category"|all [--from ...] [--to ...]`, "List logs for one category, or summarize all categories")
-	printUsageItem(`trackcli search "keyword" [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Find logs by keyword with optional date range")
-	printUsageItem(`trackcli search model "model_name" [--from ...] [--to ...]`, "Find logs by AI model")
-	printUsageItem(`trackcli search tag "tag" [--from ...] [--to ...]`, "Find logs by tag")
-	printUsageItem(`trackcli watch`, "Monitor logs in real-time (useful for checking IDE/CLI integration)")
-	printUsageItem(`trackcli dashboard`, "Open the interactive multi-tab CLI dashboard")
-	printUsageItem(`trackcli summary [today|week|month]`, "Activity summary for today, this week, or this month")
-	printUsageItem(`trackcli tag list`, "Show all used tags and their counts")
-	printUsageItem(`trackcli pricing sync [all|model ...]`, "Fetch latest model pricing from OpenRouter and update config")
+	printUsageItem(`atrack log "message" [-c category] [-t tag1,tag2]`, "Add a manual log entry with optional tags")
+	printUsageItem(`atrack auto "question" "answer" "model" tokens_in tokens_out`, "Save an AI Q&A log")
+	printUsageItem(`atrack list [date] [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Show logs with exact-date or date-range filters")
+	printUsageItem(`atrack list last`, "Quickly view only the most recent log entry")
+	printUsageItem(`atrack list model "model_name"|all [--from ...] [--to ...]`, "List logs for one model, or summarize all models")
+	printUsageItem(`atrack list category "category"|all [--from ...] [--to ...]`, "List logs for one category, or summarize all categories")
+	printUsageItem(`atrack search "keyword" [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Find logs by keyword with optional date range")
+	printUsageItem(`atrack search model "model_name" [--from ...] [--to ...]`, "Find logs by AI model")
+	printUsageItem(`atrack search tag "tag" [--from ...] [--to ...]`, "Find logs by tag")
+	printUsageItem(`atrack watch`, "Monitor logs in real-time (useful for checking IDE/CLI integration)")
+	printUsageItem(`atrack dashboard`, "Open the interactive multi-tab CLI dashboard")
+	printUsageItem(`atrack summary [today|week|month]`, "Activity summary for today, this week, or this month")
+	printUsageItem(`atrack tag list`, "Show all used tags and their counts")
+	printUsageItem(`atrack pricing sync [all|model ...]`, "Fetch latest model pricing from OpenRouter and update config")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "🛠 Management" + ColorReset)
-	printUsageItem(`trackcli edit <index> [field] <value>`, "Edit a log entry; default field is message or answer")
-	printUsageItem(`trackcli delete <index>`, "Delete a single log entry")
-	printUsageItem(`trackcli stats | stats model | stats cost | stats today`, "Show total stats, per-model stats, estimated cost, or today's stats")
-	printUsageItem(`trackcli export [md|csv|json]`, "Export logs to Markdown, CSV, or JSON")
-	printUsageItem(`trackcli config [show|get|set|reset]`, "View or update app configuration")
-	printUsageItem(`trackcli info`, "Show config and storage paths")
-	printUsageItem(`trackcli version`, "Show the current version")
-	printUsageItem(`trackcli clear`, "Clear all saved logs")
+	printUsageItem(`atrack edit <index> [field] <value>`, "Edit a log entry; default field is message or answer")
+	printUsageItem(`atrack delete <index>`, "Delete a single log entry")
+	printUsageItem(`atrack stats | stats model | stats cost | stats today`, "Show total stats, per-model stats, estimated cost, or today's stats")
+	printUsageItem(`atrack export [md|csv|json]`, "Export logs to Markdown, CSV, or JSON")
+	printUsageItem(`atrack config [show|get|set|reset]`, "View or update app configuration")
+	printUsageItem(`atrack info`, "Show config and storage paths")
+	printUsageItem(`atrack version`, "Show the current version")
+	printUsageItem(`atrack clear`, "Clear all saved logs")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "⚡ Quick start" + ColorReset)
-	fmt.Println("  " + ColorGreen + `trackcli log "Started research on project" -c Research -t planning,cli` + ColorReset)
-	fmt.Println("  " + ColorGreen + `trackcli search tag "planning" --from 2026-05-01 --to 2026-05-31` + ColorReset)
+	fmt.Println("  " + ColorGreen + `atrack log "Started research on project" -c Research -t planning,cli` + ColorReset)
+	fmt.Println("  " + ColorGreen + `atrack search tag "planning" --from 2026-05-01 --to 2026-05-31` + ColorReset)
 	fmt.Println()
 
 	loadConfig()
