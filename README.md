@@ -1,14 +1,14 @@
-# AgentTrack — AI Activity Tracker `v0.13`
+# AgentTrack — AI Activity Tracker `v0.14.0`
 
 A cross-platform terminal tool for tracking tasks and AI interactions. Automatically logs questions, answers, models, and token usage from your AI CLI sessions — with real-time Gemini CLI watching, activity summaries, and tag management.
 
-## What's New in v0.13
-- **`atrack summary [today|week|month]`** — Activity summary with model breakdown, token totals, and tag usage
-- **`atrack tag list`** — View all tags and their counts across all logs
-- **`atrack stats today`** — Quick today-only token and log stats
-- **`atrack pricing sync [all|model ...]`** — Pull the latest OpenRouter pricing into local config
-- **`gemini-cli-atrack.sh`** — Background watcher that auto-logs native Gemini CLI sessions in real-time (no wrapper needed)
-- **Bug fix:** Timezone-aware date filtering in summary commands
+## What's New in v0.14.0
+- **Dashboard: Trends Tab** — 30-day daily activity bar chart (Logs / Tokens / Cost metrics)
+- **Dashboard: Cost Tab** — Cost summary (today/week/month/all-time) + per-model cost breakdown
+- **Dashboard: Stats Tab** — Redesigned as interactive ASCII bar chart per model with metric selector
+- **Dashboard: Logs Tab** — Filter bar (Keyword / Model / Category) + **Live Watch** mode (auto-refresh every 2s)
+- **Dashboard: Settings Tab** — Export buttons (MD / CSV / JSON) at top; Database Storage info moved to bottom
+- **Dashboard:** Removed Tags tab (use `atrack search tag` or `atrack tag list` instead)
 
 ## Features
 - **Auto-Tracking:** Logs AI questions, answers, models, and token counts automatically
@@ -67,7 +67,7 @@ atrack search model "gemini-2.5-pro"
 atrack search "fix" --from 2026-05-01 --to 2026-05-31
 ```
 
-### Activity Summary *(v0.13)*
+### Activity Summary *(v0.13.1)*
 ```bash
 atrack summary             # today (default)
 atrack summary today
@@ -75,7 +75,7 @@ atrack summary week
 atrack summary month
 ```
 
-### Tags *(v0.13)*
+### Tags *(v0.13.1)*
 ```bash
 atrack tag list            # all tags with counts
 ```

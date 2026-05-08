@@ -44,6 +44,7 @@ type Config struct {
 	ProjectName     string                `json:"project_name"`
 	DefaultModel    string                `json:"default_model"`
 	Timezone        string                `json:"timezone"`
+	AutoRun         bool                  `json:"auto_run"`
 	TokenEstimation TokenEstimationConfig `json:"token_estimation"`
 	Display         DisplayConfig         `json:"display"`
 	Storage         StorageConfig         `json:"storage"`
@@ -84,7 +85,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.13"
+	Version     = "0.14.0"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
@@ -116,20 +117,21 @@ type OpenRouterModelsResponse struct {
 }
 
 const splashBanner = `
-    ___                        _ _____               _    
-   / _ \                      | |_   _|             | |   
-  / /_\ \ __ _  ___ _ __  ___| | | | _ __ __ _  ___| | __
-  |  _  |/ _` + "`" + ` |/ _ \ '_ \/ __| | | || '__/ _` + "`" + ` |/ __| |/ /
-  | | | | (_| |  __/ | | \__ \ | | || | | (_| | (__|   < 
-  \_| |_/\__, |\___|_| |_|___/_| \_/_|  \__,_|\___|_|\_\
-          __/ |                                          
-         |___/                                           `
+     ___                       _   _____              _   
+    / _ \                     | | |_   _|            | |  
+   / /_\ \ __ _  ___ _ __  ___| |_  | | _ __ __ _  ___| | __
+   |  _  |/ _` + "`" + ` |/ _ \ '_ \/ __| __| | || '__/ _` + "`" + ` |/ __| |/ /
+   | | | | (_| |  __/ | | \__ \ |_  | || | | (_| | (__|   < 
+   \_| |_/\__, |\___|_| |_|___/\__| \_/_|  \__,_|\___|_|\_\
+          __/ |                                           
+         |___/                                            `
 
 func defaultConfig() Config {
 	return Config{
 		ProjectName:  "AgentTrack Activity Tracker",
 		DefaultModel: "gemini-1.5-flash",
 		Timezone:     "Asia/Bangkok",
+		AutoRun:      false,
 		TokenEstimation: TokenEstimationConfig{
 			Enabled:       true,
 			CharsPerToken: 3.5,
@@ -1027,15 +1029,15 @@ func clearLogs() {
 	fmt.Println("All log files cleared.")
 }
 
-func watchLogs() {
+func watchLogs(interval time.Duration) {
 	loadConfig()
-	fmt.Println(ColorCyan + "👀 Watching for new AgentTrack logs in real-time... (Press Ctrl+C to stop)" + ColorReset)
+	fmt.Printf(ColorCyan + "👀 Watching for new AgentTrack logs in real-time... (Interval: %v, Press Ctrl+C to stop)\n" + ColorReset, interval)
 	fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
 
 	lastCount := len(getLogsFromAllFiles())
 
 	for {
-		time.Sleep(1 * time.Second)
+		time.Sleep(interval)
 		logs := getLogsFromAllFiles()
 		currentCount := len(logs)
 
@@ -1044,13 +1046,14 @@ func watchLogs() {
 				log := logs[i]
 				category := logCategory(log)
 				metadata := fmt.Sprintf(ColorYellow+"[Model: %s | Tokens: In=%d, Out=%d]"+ColorReset, logModel(log), log.TokensIn, log.TokensOut)
+				now := time.Now().Format("15:04:05")
 
 				if category == "AutoLog" && log.Question != "" {
-					fmt.Printf("✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] | %s\n", log.Timestamp, metadata)
+					fmt.Printf("[%s] ✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] | %s\n", now, log.Timestamp, metadata)
 					fmt.Printf("  👤 "+ColorBold+"Q: %s"+ColorReset+"\n", log.Question)
 					fmt.Printf("  🤖 "+ColorBold+"A: %s"+ColorReset+"\n", log.Answer)
 				} else {
-					fmt.Printf("✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] ("+ColorPurple+"%s"+ColorReset+") | 📝 %s\n", log.Timestamp, category, log.Message)
+					fmt.Printf("[%s] ✨ "+ColorGreen+"New Log:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] ("+ColorPurple+"%s"+ColorReset+") | 📝 %s\n", now, log.Timestamp, category, log.Message)
 				}
 				fmt.Println(ColorGray + strings.Repeat("-", 110) + ColorReset)
 			}
@@ -1058,6 +1061,47 @@ func watchLogs() {
 		} else if currentCount < lastCount {
 			lastCount = currentCount
 		}
+	}
+}
+
+func initRules() {
+	ruleContent := `# AgentTrack Log Trigger
+On every chat turn, you MUST execute this shell command to log the activity:
+/Users/phoori/go/bin/atrack auto "<user_q>" "<ai_a_summary>" "<model>" 0 0
+- Q: Short prompt summary.
+- A: Short answer summary (max 50 chars).
+- Do not add conversational filler.
+`
+	files := []string{
+		".cursorrules",
+		".clinerules",
+		".roorules",
+		".windsurfrules",
+		"CLAUDE.md",
+		".aider.rules.md",
+		"QWEN.md",
+	}
+
+	createdCount := 0
+	for _, file := range files {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			err := os.WriteFile(file, []byte(ruleContent), 0644)
+			if err == nil {
+				fmt.Printf("✨ Created %s\n", file)
+				createdCount++
+			} else {
+				fmt.Printf("❌ Error creating %s: %v\n", file, err)
+			}
+		} else {
+			fmt.Printf("⚠️  Skipped %s (already exists)\n", file)
+		}
+	}
+	
+	if createdCount > 0 {
+		fmt.Println("\n✅ AgentTrack rules initialized successfully!")
+		fmt.Println("Agents like Cursor, Cline, Roo, Windsurf, Claude Code, and Aider will now auto-log to AgentTrack in this project.")
+	} else {
+		fmt.Println("\nNo new rule files were created.")
 	}
 }
 
@@ -1266,7 +1310,17 @@ func main() {
 		}
 
 	case "watch":
-		watchLogs()
+		interval := 1 * time.Second
+		if len(os.Args) > 2 {
+			dur, err := time.ParseDuration(os.Args[2])
+			if err == nil {
+				interval = dur
+			}
+		}
+		watchLogs(interval)
+
+	case "init":
+		initRules()
 
 	case "dashboard":
 		runDashboard()
@@ -1339,6 +1393,9 @@ func main() {
 			showConfigHelp()
 		}
 
+	case "help", "?":
+		printFullUsage()
+
 	default:
 		printUsage()
 	}
@@ -1379,6 +1436,7 @@ func showConfigHelp() {
 	fmt.Println("Available keys:")
 	fmt.Println("  default_model")
 	fmt.Println("  timezone")
+	fmt.Println("  auto_run (true/false)")
 	fmt.Println("  token_estimation.enabled")
 	fmt.Println("  token_estimation.chars_per_token")
 	fmt.Println("  display.show_workspace")
@@ -1514,6 +1572,13 @@ func updateConfig(key string, values []string) {
 		config.DefaultModel = val
 	case "timezone":
 		config.Timezone = val
+	case "auto_run":
+		b, err := parseBool(val)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.AutoRun = b
 	case "token_estimation.enabled":
 		b, err := parseBool(val)
 		if err != nil {
@@ -1985,46 +2050,64 @@ func printUsageItem(command string, description string) {
 
 func printUsage() {
 	fmt.Println(ColorGreen + ColorBold + splashBanner + ColorReset)
-	fmt.Printf("            %s%sv%s%s | The Cross-Platform AI Activity Tracker\n\n", ColorGreen, ColorBold, Version, ColorReset)
+	fmt.Printf("            %s%sv%s%s | Agent Track: The Cross-Platform AI Activity Tracker\n\n", ColorGreen, ColorBold, Version, ColorReset)
 
 	fmt.Println(ColorYellow + "📚 Usage" + ColorReset)
 	fmt.Println("  atrack <command> [arguments]")
 	fmt.Println()
 
-	fmt.Println(ColorCyan + "✨ Most common" + ColorReset)
-	printUsageItem(`atrack log "message" [-c category] [-t tag1,tag2]`, "Add a manual log entry with optional tags")
-	printUsageItem(`atrack auto "question" "answer" "model" tokens_in tokens_out`, "Save an AI Q&A log")
-	printUsageItem(`atrack list [date] [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Show logs with exact-date or date-range filters")
-	printUsageItem(`atrack list last`, "Quickly view only the most recent log entry")
-	printUsageItem(`atrack list model "model_name"|all [--from ...] [--to ...]`, "List logs for one model, or summarize all models")
-	printUsageItem(`atrack list category "category"|all [--from ...] [--to ...]`, "List logs for one category, or summarize all categories")
-	printUsageItem(`atrack search "keyword" [--from YYYY-MM-DD] [--to YYYY-MM-DD]`, "Find logs by keyword with optional date range")
-	printUsageItem(`atrack search model "model_name" [--from ...] [--to ...]`, "Find logs by AI model")
-	printUsageItem(`atrack search tag "tag" [--from ...] [--to ...]`, "Find logs by tag")
-	printUsageItem(`atrack watch`, "Monitor logs in real-time (useful for checking IDE/CLI integration)")
-	printUsageItem(`atrack dashboard`, "Open the interactive multi-tab CLI dashboard")
-	printUsageItem(`atrack summary [today|week|month]`, "Activity summary for today, this week, or this month")
-	printUsageItem(`atrack tag list`, "Show all used tags and their counts")
-	printUsageItem(`atrack pricing sync [all|model ...]`, "Fetch latest model pricing from OpenRouter and update config")
-	fmt.Println()
-
-	fmt.Println(ColorCyan + "🛠 Management" + ColorReset)
-	printUsageItem(`atrack edit <index> [field] <value>`, "Edit a log entry; default field is message or answer")
-	printUsageItem(`atrack delete <index>`, "Delete a single log entry")
-	printUsageItem(`atrack stats | stats model | stats cost | stats today`, "Show total stats, per-model stats, estimated cost, or today's stats")
-	printUsageItem(`atrack export [md|csv|json]`, "Export logs to Markdown, CSV, or JSON")
-	printUsageItem(`atrack config [show|get|set|reset]`, "View or update app configuration")
-	printUsageItem(`atrack info`, "Show config and storage paths")
-	printUsageItem(`atrack version`, "Show the current version")
-	printUsageItem(`atrack clear`, "Clear all saved logs")
+	fmt.Println(ColorCyan + "✨ Essential Commands" + ColorReset)
+	printUsageItem(`atrack log "message"`, "Add a manual activity log")
+	printUsageItem(`atrack list`, "Show recent logs (use 'list last' for the latest)")
+	printUsageItem(`atrack dashboard`, "Open the interactive CLI dashboard")
+	printUsageItem(`atrack stats [today|model]`, "Show your activity statistics")
+	printUsageItem(`atrack summary`, "Get a quick activity summary")
+	printUsageItem(`atrack help | ?`, "Show all available commands and detailed usage")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "⚡ Quick start" + ColorReset)
-	fmt.Println("  " + ColorGreen + `atrack log "Started research on project" -c Research -t planning,cli` + ColorReset)
-	fmt.Println("  " + ColorGreen + `atrack search tag "planning" --from 2026-05-01 --to 2026-05-31` + ColorReset)
+	fmt.Println("  " + ColorGreen + `atrack log "Working on new feature" -c Dev -t golang` + ColorReset)
+	fmt.Println("  " + ColorGreen + `atrack stats today` + ColorReset)
 	fmt.Println()
 
 	loadConfig()
 	logs := getLogsFromAllFiles()
 	fmt.Printf("%s💡 Quick Stats:%s You have %s%d%s total logs recorded.\n", ColorGray, ColorReset, ColorCyan, len(logs), ColorReset)
+}
+
+func printFullUsage() {
+	fmt.Println(ColorGreen + ColorBold + splashBanner + ColorReset)
+	fmt.Printf("            %s%sv%s%s | Agent Track: Detailed Help\n\n", ColorGreen, ColorBold, Version, ColorReset)
+
+	fmt.Println(ColorYellow + "📚 Full Command List" + ColorReset)
+	fmt.Println()
+
+	fmt.Println(ColorCyan + "📝 Logging & Viewing" + ColorReset)
+	printUsageItem(`atrack log "message" [-c category] [-t tag1,tag2]`, "Add a manual log entry")
+	printUsageItem(`atrack auto "q" "a" "model" in out`, "Save an AI Q&A log (internal use/scripts)")
+	printUsageItem(`atrack list [date] [--from YYYY-MM-DD --to YYYY-MM-DD]`, "Filter logs by date")
+	printUsageItem(`atrack list model "name"|all`, "List logs by AI model")
+	printUsageItem(`atrack list category "name"|all`, "List logs by category")
+	printUsageItem(`atrack watch`, "Monitor logs in real-time")
+	printUsageItem(`atrack dashboard`, "Open the interactive dashboard")
+	fmt.Println()
+
+	fmt.Println(ColorCyan + "🔍 Search & Analysis" + ColorReset)
+	printUsageItem(`atrack search "keyword"`, "Find logs by keyword")
+	printUsageItem(`atrack search model|tag "value"`, "Find logs by model or tag")
+	printUsageItem(`atrack summary [today|week|month]`, "Periodic activity summary")
+	printUsageItem(`atrack stats | model | cost | today`, "Detailed statistics and costs")
+	printUsageItem(`atrack tag list`, "List all used tags")
+	fmt.Println()
+
+	fmt.Println(ColorCyan + "🛠 Management" + ColorReset)
+	printUsageItem(`atrack edit <index> [field] <value>`, "Edit a log entry")
+	printUsageItem(`atrack delete <index>`, "Delete a log entry")
+	printUsageItem(`atrack export [md|csv|json]`, "Export data to files")
+	printUsageItem(`atrack pricing sync [all|model]`, "Sync model prices from OpenRouter")
+	printUsageItem(`atrack config [show|get|set|reset]`, "Manage application configuration")
+	printUsageItem(`atrack info`, "Show system paths and info")
+	printUsageItem(`atrack version`, "Show app version")
+	printUsageItem(`atrack clear`, "Wipe all log data")
+	fmt.Println()
 }
