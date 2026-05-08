@@ -30,6 +30,12 @@ Token counts, costs, summaries, and a full TUI dashboard — all in your termina
 
 ## 📦 Installation
 
+### 🍺 Homebrew (macOS / Linux) — Recommended
+```bash
+brew tap alfaXphoori/agenttrack
+brew install atrack
+```
+
 ### macOS / Linux — Build from Source
 ```bash
 git clone https://github.com/alfaXphoori/AgentTrack.git
