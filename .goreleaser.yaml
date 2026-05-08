@@ -33,6 +33,12 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - scripts/gemiatrack.sh
+      - scripts/gemini-cli-atrack.sh
+      - scripts/auto-run-service.sh
+      - scripts/vscode-copilot-watcher.sh
+      - scripts/vscode-copilot-watcher.py
 
 checksum:
   name_template: 'checksums.txt'
@@ -51,6 +57,8 @@ brews:
     directory: Formula
     install: |
       bin.install "atrack"
+      bin.install "scripts/gemiatrack.sh" => "gemiatrack"
+      bin.install "scripts/gemini-cli-atrack.sh" => "gemini-cli-atrack"
     test: |
       system "#{bin}/atrack", "--version"
 
