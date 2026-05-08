@@ -41,6 +41,20 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+brews:
+  - name: atrack
+    repository:
+      owner: alfaXphoori
+      name: homebrew-agenttrack
+    homepage: "https://github.com/alfaXphoori/AgentTrack"
+    description: "Terminal CLI tool for tracking AI agent interactions"
+    license: "MIT"
+    directory: Formula
+    install: |
+      bin.install "atrack"
+    test: |
+      system "#{bin}/atrack", "--version"
+
 changelog:
   sort: asc
   filters:
