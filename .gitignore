@@ -11,3 +11,4 @@ error.log
 *.swp
 *.swo
 .DS_Store
+dist/
