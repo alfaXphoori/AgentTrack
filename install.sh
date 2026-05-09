@@ -11,8 +11,8 @@ fi
 
 # 2. Build and install Go binary
 echo "📦 Building and installing AgentTrack CLI globally..."
-go build -o atrack .
-go install .
+go build -o atrack ./cmd/atrack
+go install ./cmd/atrack
 
 # Check if go/bin is in PATH
 if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then

@@ -10,9 +10,11 @@ import (
 
 func TestGemitrack(t *testing.T) {
 	cwd, _ := os.Getwd()
+	// The scripts directory is at the project root, two levels up from cmd/atrack
+	root := filepath.Join(cwd, "..", "..")
 
 	// Check gemitrack.sh exists and is executable
-	scriptPath := filepath.Join(cwd, "scripts", "gemiatrack.sh")
+	scriptPath := filepath.Join(root, "scripts", "gemiatrack.sh")
 	info, err := os.Stat(scriptPath)
 	if err != nil {
 		t.Fatalf("gemitrack.sh not found: %v", err)

@@ -11,6 +11,7 @@ before:
 builds:
   - id: atrack
     binary: atrack
+    main: ./cmd/atrack
     env:
       - CGO_ENABLED=0
     goos:
