@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -76,7 +76,7 @@ func TestTracker(t *testing.T) {
 
 	cwd, _ := os.Getwd()
 
-	cmd := exec.Command("go", "build", "-o", "tracker_test_bin.exe", ".")
+	cmd := exec.Command("go", "build", "-o", "tracker_test_bin.exe", "../../cmd/atrack")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to build: %v", err)
 	}

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +61,7 @@ func processCopilotFile(filePath, stateDir string) {
 	var sessionID string
 	var requests []map[string]interface{}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	// First pass
 	for scanner.Scan() {
@@ -133,6 +135,7 @@ func processCopilotFile(filePath, stateDir string) {
 	// Second pass
 	file.Seek(0, 0)
 	scanner = bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		var data map[string]interface{}
 		if err := json.Unmarshal(scanner.Bytes(), &data); err != nil {
@@ -196,7 +199,15 @@ func processCopilotFile(filePath, stateDir string) {
 func watchCopilot() {
 	fmt.Println("🔍 Starting VS Code Copilot Watcher (Go Native)...")
 	homeDir, _ := os.UserHomeDir()
-	storagePath := filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "workspaceStorage")
+
+	var storagePath string
+	switch runtime.GOOS {
+	case "darwin":
+		storagePath = filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "workspaceStorage")
+	default: // linux and others
+		storagePath = filepath.Join(homeDir, ".config", "Code", "User", "workspaceStorage")
+	}
+
 	stateDir := filepath.Join(homeDir, ".atrack", "vscode_copilot_state")
 	os.MkdirAll(stateDir, 0755)
 
@@ -273,6 +284,7 @@ func runDetectGeminiModel(cwd, homeDir string) string {
 			continue
 		}
 		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 		var model string
 		for scanner.Scan() {
 			var data interface{}
@@ -293,7 +305,7 @@ func runDetectGeminiModel(cwd, homeDir string) string {
 func detectGeminiModel() {
 	cwd, _ := os.Getwd()
 	homeDir, _ := os.UserHomeDir()
-	
+
 	model := runDetectGeminiModel(cwd, homeDir)
 	if model != "" {
 		fmt.Println(model)
@@ -337,6 +349,7 @@ func processGeminiSession(filePath, stateDir string) {
 	sessionID := ""
 
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		var d map[string]interface{}
 		if err := json.Unmarshal(scanner.Bytes(), &d); err != nil {
@@ -439,7 +452,7 @@ func processGeminiSession(filePath, stateDir string) {
 		toolsStr := strings.Join(p.Tools, ",")
 		ti := fmt.Sprintf("%d", max(1, len(p.Question)/4))
 		to := fmt.Sprintf("%d", max(1, len(p.Answer)/4))
-		
+
 		summary := p.Answer
 		if lines := strings.Split(summary, "\n"); len(lines) > 0 {
 			summary = lines[0]
@@ -450,12 +463,12 @@ func processGeminiSession(filePath, stateDir string) {
 
 		cmd := exec.Command(atrackBin, "auto", p.Question, summary, p.Model, ti, to, dur, sessionID, "success", toolsStr, "gemini-cli")
 		err := cmd.Run()
-		
+
 		icon := "✅"
 		if err != nil {
 			icon = "⚠️ "
 		}
-		
+
 		qDisp := p.Question
 		if len(qDisp) > 60 {
 			qDisp = qDisp[:60]
@@ -464,13 +477,6 @@ func processGeminiSession(filePath, stateDir string) {
 	}
 
 	os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", len(pairs))), 0644)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func watchGemini() {

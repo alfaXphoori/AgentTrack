@@ -4,7 +4,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.13.3-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.13.6-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#installation)
@@ -18,7 +18,7 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ---
 
-## ✨ What's New in v0.13.3
+## ✨ What's New in v0.13.6
 
 | Feature | Description |
 |:---|:---|
@@ -27,6 +27,7 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 | 📊 **Dashboard: Stats** | Interactive ASCII bar chart per model with metric selector. |
 | 🔍 **Dashboard: Logs** | Filter by Keyword / Model / Category + **Live Watch** (auto-refresh every 2s). |
 | ⚙️ **Dashboard: Settings** | Export buttons (MD / CSV / JSON) at the top of the settings tab. |
+| 🏗️ **Architecture** | Refactored to standard Go project layout for better maintainability. |
 
 ---
 
@@ -48,8 +49,8 @@ brew install atrack
 ```bash
 git clone https://github.com/alfaXphoori/AgentTrack.git
 cd AgentTrack
-go build -o atrack .
-go install .
+go build -o atrack ./cmd/atrack
+go install ./cmd/atrack
 ```
 
 </details>
@@ -58,7 +59,7 @@ go install .
 <summary><b>🐹 macOS / Linux — via Go</b></summary>
 
 ```bash
-go install github.com/alfaXphoori/AgentTrack@latest
+go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
 ```
 
 </details>
@@ -80,14 +81,12 @@ sudo mv atrack /usr/local/bin/
 ```powershell
 git clone https://github.com/alfaXphoori/AgentTrack.git
 cd AgentTrack
-go build -o atrack.exe .
+go build -o atrack.exe ./cmd/atrack
 ```
 
 </details>
 
 <br>
-
-> 📚 See [docs/INSTALL.md](docs/INSTALL.md) for full platform instructions.
 
 ---
 
@@ -234,16 +233,24 @@ Run `atrack init` in any project to auto-generate rule files for all supported a
 
 ```text
 AgentTrack/
-├── main.go                    # Core CLI — all commands
-├── dashboard.go               # TUI Dashboard (tview)
-├── timezones.go               # Timezone utilities
-├── go.mod / go.sum
+├── cmd/atrack/                # Application entrypoint
+│   └── main.go
+├── internal/app/              # Core logic & TUI components
+│   ├── app.go
+│   ├── dashboard.go
+│   ├── timezones.go
+│   └── watchers.go
 ├── scripts/
 │   ├── gemini-cli-atrack.sh   # Gemini CLI background watcher
 │   ├── gemiatrack.sh          # Gemini CLI interactive wrapper
+│   ├── vscode-copilot-watcher.sh  # VS Code Copilot background watcher
+│   ├── cursor-atrack.sh       # Cursor IDE wrapper
+│   ├── auto-run-service.sh    # Auto-start service helper
 │   └── atrack-base.sh         # Shared utilities
-├── docs/
-│   └── INSTALL.md             # Cross-platform install guide
+├── agent-rules/               # AI agent rule templates
+│   ├── AGENTS.md
+│   ├── CLAUDE.md
+│   └── QWEN.md
 ├── integrations/              # Per-agent integration guides
 └── ~/.atrack/                 # Data directory (auto-created)
     ├── config.json
@@ -254,5 +261,8 @@ AgentTrack/
 
 ## 📄 License
 
-MIT © [alfaXphoori](https://github.com/alfaXphoori)
+This project is licensed under the **Apache License 2.0**.  
+See the [LICENSE](LICENSE) file for the full license text.
+
+Built with ❤️ by [alfaXphoori](https://github.com/alfaXphoori) and the open-source community.
 

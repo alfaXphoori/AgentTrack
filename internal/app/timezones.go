@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"os"
@@ -52,8 +52,8 @@ func ListAllTimezones() []string {
 
 	if !found {
 		// Minimum fallback list
-		return []string{"UTC", "Asia/Bangkok", "Asia/Tokyo", "Asia/Singapore", "Asia/Hong_Kong", "Asia/Seoul", 
-			"America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Europe/Berlin", 
+		return []string{"UTC", "Asia/Bangkok", "Asia/Tokyo", "Asia/Singapore", "Asia/Hong_Kong", "Asia/Seoul",
+			"America/New_York", "America/Los_Angeles", "America/Chicago", "Europe/London", "Europe/Paris", "Europe/Berlin",
 			"Australia/Sydney", "Pacific/Auckland"}
 	}
 
@@ -65,4 +65,3 @@ func ListAllTimezones() []string {
 	sort.Strings(zones)
 	return zones
 }
-

@@ -39,7 +39,6 @@ archives:
       - scripts/gemini-cli-atrack.sh
       - scripts/auto-run-service.sh
       - scripts/vscode-copilot-watcher.sh
-      - scripts/vscode-copilot-watcher.py
 
 nfpms:
   - vendor: AgentTrack

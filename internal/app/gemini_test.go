@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"os"
@@ -63,7 +63,7 @@ func TestGemitrack(t *testing.T) {
 
 	// Run the Go model-detection snippet
 	detected := runDetectGeminiModel(cwd, tmpHome)
-	
+
 	if detected != "gemini-test-model-preview" {
 		t.Fatalf("Model detection returned %q, want %q", detected, "gemini-test-model-preview")
 	}

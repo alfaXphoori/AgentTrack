@@ -12,4 +12,4 @@ echo $$ > "$LOCK_FILE"
 trap "rm -f $LOCK_FILE" EXIT
 trap '' HUP
 
-exec "$ATRACK_BIN" internal-watch-copilot
+"$ATRACK_BIN" internal-watch-copilot

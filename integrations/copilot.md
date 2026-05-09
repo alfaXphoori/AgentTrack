@@ -10,3 +10,4 @@ For a more automated experience, you can create an alias in your `.zshrc` or `.b
 ```bash
 alias gha='atrack auto'
 ```
+
