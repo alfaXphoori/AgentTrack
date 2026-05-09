@@ -41,6 +41,22 @@ archives:
       - scripts/vscode-copilot-watcher.sh
       - scripts/vscode-copilot-watcher.py
 
+nfpms:
+  - vendor: AgentTrack
+    homepage: "https://github.com/alfaXphoori/AgentTrack"
+    maintainer: "alfaXphoori"
+    description: "Terminal CLI tool for tracking AI agent interactions"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    contents:
+      - src: scripts/gemiatrack.sh
+        dst: /usr/local/bin/gemiatrack
+      - src: scripts/gemini-cli-atrack.sh
+        dst: /usr/local/bin/gemini-cli-atrack
+
 checksum:
   name_template: 'checksums.txt'
 
