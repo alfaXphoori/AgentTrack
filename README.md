@@ -6,7 +6,7 @@
 
 [![Version](https://img.shields.io/badge/version-0.13.6-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
-[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#installation)
 
 Track every AI interaction across **Cursor, Copilot, Gemini CLI, Claude Code, Aider** and more — *automatically*.  
@@ -76,7 +76,43 @@ sudo mv atrack /usr/local/bin/
 </details>
 
 <details>
-<summary><b>🪟 Windows — Build from Source</b></summary>
+<summary><b>🍦 Windows — Scoop (Recommended)</b></summary>
+
+```powershell
+# one-time: add this bucket
+scoop bucket add atrack https://github.com/alfaXphoori/scoop-bucket.git
+
+# install AgentTrack
+scoop install atrack
+
+# optional: upgrade/remove later
+scoop update atrack
+scoop uninstall atrack
+```
+
+</details>
+
+<details>
+<summary><b>🪟 Windows — PowerShell One-liner (Alternative)</b></summary>
+
+```powershell
+go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
+```
+*(Requires [Go](https://go.dev/doc/install) to be installed)*
+
+</details>
+
+<details>
+<summary><b>📦 Windows — Manual Binary Install</b></summary>
+
+1. Download `atrack_windows_amd64.zip` from [Releases](https://github.com/alfaXphoori/AgentTrack/releases).
+2. Extract `atrack.exe` to a folder (e.g., `C:\atrack`).
+3. Add that folder to your System **PATH**.
+
+</details>
+
+<details>
+<summary><b>💻 Windows — Build from Source</b></summary>
 
 ```powershell
 git clone https://github.com/alfaXphoori/AgentTrack.git
