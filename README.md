@@ -252,16 +252,6 @@ AgentTrack/
 
 ---
 
-## 🧪 Testing
-
-```bash
-go test ./...
-```
-
-*Tests automatically back up and restore existing log data.*
-
----
-
 ## 📄 License
 
 MIT © [alfaXphoori](https://github.com/alfaXphoori)
