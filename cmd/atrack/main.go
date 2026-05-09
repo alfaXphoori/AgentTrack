@@ -1322,6 +1322,15 @@ func main() {
 	case "init":
 		initRules()
 
+	case "internal-watch-copilot":
+		watchCopilot()
+
+	case "internal-watch-gemini":
+		watchGemini()
+
+	case "internal-detect-gemini":
+		detectGeminiModel()
+
 	case "dashboard":
 		runDashboard()
 

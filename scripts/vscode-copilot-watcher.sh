@@ -1,12 +1,15 @@
 #!/bin/bash
-# vscode-copilot-watcher.sh - Background watcher for VS Code Copilot Chat sessions
+# vscode-copilot-watcher.sh - Simple launcher for the AgentTrack VS Code Copilot watcher
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_SCRIPT="$SCRIPT_DIR/vscode-copilot-watcher.py"
+ATRACK_BIN="$(command -v atrack)"
 
-if [ ! -f "$PYTHON_SCRIPT" ]; then
-    echo "❌ Error: Python script not found at $PYTHON_SCRIPT"
-    exit 1
+# Guard: only one instance running
+LOCK_FILE="/tmp/vscode-copilot-atrack.lock"
+if [ -f "$LOCK_FILE" ] && kill -0 "$(cat $LOCK_FILE)" 2>/dev/null; then
+  exit 0
 fi
+echo $$ > "$LOCK_FILE"
+trap "rm -f $LOCK_FILE" EXIT
+trap '' HUP
 
-python3 "$PYTHON_SCRIPT"
+exec "$ATRACK_BIN" internal-watch-copilot

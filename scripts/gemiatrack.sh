@@ -6,54 +6,7 @@ ATRACK_BIN="$(command -v atrack || echo "$SCRIPT_DIR/../atrack")"
 
 # Auto-detect live model from latest Gemini CLI session file
 detect_live_model() {
-  python3 - <<'PYEOF'
-import json, os, glob, sys
-
-def find_model(obj):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k == 'model' and isinstance(v, str) and 'gemini' in v.lower():
-                return v
-            r = find_model(v)
-            if r: return r
-    elif isinstance(obj, list):
-        for i in obj:
-            r = find_model(i)
-            if r: return r
-    return None
-
-cwd = os.getcwd()
-tmp_base = os.path.expanduser('~/.gemini/tmp')
-
-# find matching project dir
-target_dir = None
-for d in os.listdir(tmp_base):
-    pr = os.path.join(tmp_base, d, '.project_root')
-    if os.path.exists(pr):
-        with open(pr) as f:
-            if f.read().strip().lower() == cwd.lower():
-                target_dir = os.path.join(tmp_base, d)
-                break
-
-if not target_dir:
-    sys.exit(1)
-
-sessions = sorted(glob.glob(os.path.join(target_dir, 'chats', 'session-*.jsonl')), key=os.path.getmtime)
-for s in reversed(sessions):
-    model = None
-    with open(s) as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            try:
-                m = find_model(json.loads(line))
-                if m: model = m
-            except: pass
-    if model:
-        print(model)
-        sys.exit(0)
-sys.exit(1)
-PYEOF
+  "$ATRACK_BIN" internal-detect-gemini
 }
 
 LIVE_MODEL=$(detect_live_model 2>/dev/null)
