@@ -16,3 +16,5 @@ require (
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 )
+
+retract [v0.13.0, v0.14.4]
