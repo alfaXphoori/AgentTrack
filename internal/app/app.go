@@ -90,7 +90,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.14.4"
+	Version     = "0.14.5"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
@@ -2425,6 +2425,12 @@ func printFullUsage() {
 	printUsageItem(`atrack autostart [install|uninstall|run]`, "Install or run the auto-start service")
 	printUsageItem(`atrack reset [--yes]`, "Delete all logs and reset config to defaults")
 	printUsageItem(`atrack uninstall [--yes]`, "Remove app data, shell hooks, and local atrack binary")
+	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")
+	printUsageItem(`atrack info`, "Show system paths and info")
+	printUsageItem(`atrack version`, "Show app version")
+	printUsageItem(`atrack clear`, "Wipe all log data")
+	fmt.Println()
+}
 	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")
 	printUsageItem(`atrack info`, "Show system paths and info")
 	printUsageItem(`atrack version`, "Show app version")
