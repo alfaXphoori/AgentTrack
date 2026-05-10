@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 type TokenEstimationConfig struct {
@@ -23,6 +26,7 @@ type DisplayConfig struct {
 	ShowWorkspace bool `json:"show_workspace"`
 	ReverseOrder  bool `json:"reverse_order"`
 	MaxLogsView   int  `json:"max_logs_view"`
+	Quiet         bool `json:"quiet"`
 }
 
 type StorageConfig struct {
@@ -185,13 +189,13 @@ func loadConfig() {
 
 func getLogPath(t time.Time) string {
 	if config.Storage.Rotation == "monthly" {
-		return filepath.Join(appDir, fmt.Sprintf("%s_%s.json", config.Storage.LogFilePrefix, t.Format("2006_01")))
+		return filepath.Join(appDir, fmt.Sprintf("%s_%s.jsonl", config.Storage.LogFilePrefix, t.Format("2006_01")))
 	}
-	return filepath.Join(appDir, config.Storage.LogFilePrefix+".json")
+	return filepath.Join(appDir, config.Storage.LogFilePrefix+".jsonl")
 }
 
 func getAllLogFiles() []string {
-	files, _ := filepath.Glob(filepath.Join(appDir, config.Storage.LogFilePrefix+"*.json"))
+	files, _ := filepath.Glob(filepath.Join(appDir, config.Storage.LogFilePrefix+"*.jsonl"))
 	sort.Strings(files)
 	return files
 }
@@ -200,19 +204,98 @@ func getLogsFromAllFiles() []LogEntry {
 	var allLogs []LogEntry
 	files := getAllLogFiles()
 	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err == nil {
-			var logs []LogEntry
-			json.Unmarshal(data, &logs)
-			allLogs = append(allLogs, logs...)
-		}
+		logs := readLogsFromFile(file)
+		allLogs = append(allLogs, logs...)
 	}
 	return allLogs
 }
 
+func readLogsFromFile(path string) []LogEntry {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	var logs []LogEntry
+	scanner := bufio.NewScanner(file)
+	const maxLogLineSize = 10 * 1024 * 1024
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLogLineSize)
+	for scanner.Scan() {
+		var entry LogEntry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err == nil {
+			logs = append(logs, entry)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Warning: could not read %s: %v\n", path, err)
+	}
+	return logs
+}
+
+func appendLogToFile(path string, entry LogEntry) error {
+	fileLock := flock.New(path + ".lock")
+	err := fileLock.Lock()
+	if err != nil {
+		return err
+	}
+	defer fileLock.Unlock()
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
 func saveLogsToFile(path string, logs []LogEntry) {
-	data, _ := json.MarshalIndent(logs, "", "  ")
-	os.WriteFile(path, data, 0644)
+	fileLock := flock.New(path + ".lock")
+	if err := fileLock.Lock(); err != nil {
+		fmt.Printf("Warning: could not lock %s: %v\n", path, err)
+		return
+	}
+	defer fileLock.Unlock()
+
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	for _, entry := range logs {
+		data, _ := json.Marshal(entry)
+		f.Write(append(data, '\n'))
+	}
+}
+
+func shortLogTime(timestamp string) string {
+	if len(timestamp) >= 16 {
+		return timestamp[11:16]
+	}
+	if timestamp == "" {
+		return "n/a"
+	}
+	return timestamp
+}
+
+func shortCategory(category string) string {
+	if category == "" {
+		return "n/a"
+	}
+	if len(category) <= 4 {
+		return category
+	}
+	return category[:4]
 }
 
 func getConfigLocation() *time.Location {
@@ -662,12 +745,6 @@ func addLog(entry LogEntry) {
 	entry.Timestamp = now.Format("2006-01-02 15:04:05")
 
 	path := getLogPath(now)
-	var logs []LogEntry
-	data, err := os.ReadFile(path)
-	if err == nil {
-		json.Unmarshal(data, &logs)
-	}
-
 	if entry.Category == "" {
 		entry.Category = "General"
 	}
@@ -678,8 +755,14 @@ func addLog(entry LogEntry) {
 		entry.Model = config.DefaultModel
 	}
 
-	logs = append(logs, entry)
-	saveLogsToFile(path, logs)
+	if err := appendLogToFile(path, entry); err != nil {
+		fmt.Printf("❌ "+ColorRed+"Error adding log:"+ColorReset+" %v\n", err)
+		return
+	}
+
+	if config.Display.Quiet {
+		return
+	}
 
 	estStr := ""
 	if entry.IsEstimated {
@@ -801,8 +884,8 @@ func renderLogs(logs []LogEntry) {
 	}
 	displayLogs := logs[:limit]
 
-	fmt.Printf("%s%-5s | %-20s | %-12s | %-8s | Metadata / Q&A%s\n", ColorBold, "ID", "Timestamp", "Category", "Time", ColorReset)
-	fmt.Println(ColorGray + strings.Repeat("=", 120) + ColorReset)
+	fmt.Printf("%s%-5s | %-5s | %-8s | Metadata / Q&A%s\n", ColorBold, "ID", "Time", "Cat", ColorReset)
+	fmt.Println(ColorGray + strings.Repeat("=", 100) + ColorReset)
 
 	for i, log := range displayLogs {
 		displayID := i
@@ -817,28 +900,30 @@ func renderLogs(logs []LogEntry) {
 			estOut = " (est)"
 		}
 
-		durationStr := ""
+		metadata := fmt.Sprintf(ColorYellow+"[M: %s | T: %d%s/%d%s]"+ColorReset, logModel(log), log.TokensIn, estIn, log.TokensOut, estOut)
 		if log.Duration > 0 {
-			durationStr = fmt.Sprintf("%.2fs", log.Duration)
+			metadata += fmt.Sprintf(ColorCyan+" [%.2fs]"+ColorReset, log.Duration)
 		}
-
-		metadata := fmt.Sprintf(ColorYellow+"[Model: %s | Tokens: In=%d%s, Out=%d%s]"+ColorReset, logModel(log), log.TokensIn, estIn, log.TokensOut, estOut)
 		if log.Cost > 0 {
-			metadata += fmt.Sprintf(ColorGreen+" [Cost: %s %.4f]"+ColorReset, config.Pricing.Currency, log.Cost)
+			metadata += fmt.Sprintf(ColorGreen+" [$: %.4f]"+ColorReset, log.Cost)
 		}
 		if log.SessionID != "" {
-			metadata += fmt.Sprintf(ColorPurple+" [SID: %s]"+ColorReset, log.SessionID)
+			sidShort := log.SessionID
+			if len(sidShort) > 8 {
+				sidShort = sidShort[:8]
+			}
+			metadata += fmt.Sprintf(ColorPurple+" [S: %s]"+ColorReset, sidShort)
 		}
 		if log.Status != "" && log.Status != "success" {
-			metadata += fmt.Sprintf(ColorRed+" [Status: %s]"+ColorReset, log.Status)
+			metadata += fmt.Sprintf(ColorRed+" [! %s]"+ColorReset, log.Status)
 		}
-		workspace := fmt.Sprintf(ColorCyan+"[WS: %s]"+ColorReset, log.Workspace)
+		
 		tagsLine := ""
 		if len(log.Tags) > 0 {
-			tagsLine = fmt.Sprintf(ColorYellow+"[Tags: %s]"+ColorReset, strings.Join(log.Tags, ", "))
+			tagsLine = fmt.Sprintf(ColorYellow+"🏷️  %s"+ColorReset, strings.Join(log.Tags, ", "))
 		}
 		if len(log.ToolsUsed) > 0 {
-			toolsLine := fmt.Sprintf(ColorBlue+"[Tools: %s]"+ColorReset, strings.Join(log.ToolsUsed, ", "))
+			toolsLine := fmt.Sprintf(ColorBlue+"🛠️  %s"+ColorReset, strings.Join(log.ToolsUsed, ", "))
 			if tagsLine != "" {
 				tagsLine += " " + toolsLine
 			} else {
@@ -846,24 +931,24 @@ func renderLogs(logs []LogEntry) {
 			}
 		}
 
+		timeLabel := shortLogTime(log.Timestamp)
+		categoryLabel := shortCategory(category)
+
 		if category == "AutoLog" && log.Question != "" && log.Answer != "" {
-			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | "+ColorCyan+"%-8s"+ColorReset+" | %s\n", displayID, log.Timestamp, category, durationStr, metadata)
-			if config.Display.ShowWorkspace {
-				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 📁 %s\n", "", "", "", "", workspace)
-			}
+			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%s"+ColorReset+" | "+ColorPurple+"%-8s"+ColorReset+" | %s\n", displayID, timeLabel, categoryLabel, metadata)
 			if tagsLine != "" {
-				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🏷️ %s\n", "", "", "", "", tagsLine)
+				fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", tagsLine)
 			}
-			fmt.Printf("%-5s | %-20s | %-12s | %-8s | 👤 "+ColorBold+"Q: %s"+ColorReset+"\n", "", "", "", "", log.Question)
-			fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🤖 "+ColorBold+"A: %s"+ColorReset+"\n", "", "", "", "", log.Answer)
+			fmt.Printf("%-5s | %-5s | %-8s | 👤 "+ColorBold+"%s"+ColorReset+"\n", "", "", "", log.Question)
+			fmt.Printf("%-5s | %-5s | %-8s | 🤖 "+ColorBold+"%s"+ColorReset+"\n", "", "", "", log.Answer)
 		} else {
-			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%-20s"+ColorReset+" | "+ColorPurple+"%-12s"+ColorReset+" | "+ColorCyan+"%-8s"+ColorReset+" | 📝 %s\n", displayID, log.Timestamp, category, durationStr, log.Message)
-			fmt.Printf("%-5s | %-20s | %-12s | %-8s | %s\n", "", "", "", "", metadata)
+			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%s"+ColorReset+" | "+ColorPurple+"%-8s"+ColorReset+" | 📝 %s\n", displayID, timeLabel, categoryLabel, log.Message)
+			fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", metadata)
 			if tagsLine != "" {
-				fmt.Printf("%-5s | %-20s | %-12s | %-8s | 🏷️ %s\n", "", "", "", "", tagsLine)
+				fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", tagsLine)
 			}
 		}
-		fmt.Println(ColorGray + strings.Repeat("-", 120) + ColorReset)
+		fmt.Println(ColorGray + strings.Repeat("-", 100) + ColorReset)
 	}
 }
 
@@ -941,13 +1026,7 @@ func resolveLogIndex(index int) (string, []LogEntry, int, LogEntry, error) {
 	}
 
 	path := getLogPath(t)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", nil, -1, LogEntry{}, fmt.Errorf("error reading log file: %v", err)
-	}
-
-	var fileLogs []LogEntry
-	json.Unmarshal(data, &fileLogs)
+	fileLogs := readLogsFromFile(path)
 
 	for i, log := range fileLogs {
 		if logEntriesMatch(log, target) {
@@ -1024,7 +1103,7 @@ func clearLogs() {
 	loadConfig()
 	files := getAllLogFiles()
 	for _, file := range files {
-		os.WriteFile(file, []byte("[]"), 0644)
+		os.WriteFile(file, []byte(""), 0644)
 	}
 	fmt.Println("All log files cleared.")
 }
@@ -1630,6 +1709,7 @@ func showConfigHelp() {
 	fmt.Println("  display.show_workspace")
 	fmt.Println("  display.reverse_order")
 	fmt.Println("  display.max_logs_view")
+	fmt.Println("  display.quiet (true/false)")
 	fmt.Println("  storage.log_file_prefix")
 	fmt.Println("  storage.rotation")
 	fmt.Println("  pricing.currency")
@@ -1701,6 +1781,8 @@ func getConfigValue(key string) (string, error) {
 		return strconv.FormatBool(config.Display.ShowWorkspace), nil
 	case "display.reverse_order":
 		return strconv.FormatBool(config.Display.ReverseOrder), nil
+	case "display.quiet":
+		return strconv.FormatBool(config.Display.Quiet), nil
 	case "rotation", "storage.rotation":
 		return config.Storage.Rotation, nil
 	case "storage.log_file_prefix":
@@ -1810,9 +1892,14 @@ func updateConfig(key string, values []string) {
 			return
 		}
 		config.Display.ReverseOrder = b
-	case "rotation":
-		fallthrough
-	case "storage.rotation":
+	case "display.quiet":
+		b, err := parseBool(val)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.Display.Quiet = b
+	case "rotation", "storage.rotation":
 		config.Storage.Rotation = val
 	case "storage.log_file_prefix":
 		config.Storage.LogFilePrefix = val

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,52 +13,14 @@ import (
 	"testing"
 )
 
-func setupTestDB() string {
-	cwd, _ := os.Getwd()
-	dbPath := filepath.Join(cwd, "atrack_logs.json")
-	bakPath := filepath.Join(cwd, "atrack_logs.json.bak")
-	if _, err := os.Stat(dbPath); err == nil {
-		data, _ := os.ReadFile(dbPath)
-		os.WriteFile(bakPath, data, 0644)
-	}
-	return bakPath
-}
-
-func restoreTestDB(bakPath string) {
-	cwd, _ := os.Getwd()
-	dbPath := filepath.Join(cwd, "atrack_logs.json")
-	if _, err := os.Stat(bakPath); err == nil {
-		data, _ := os.ReadFile(bakPath)
-		os.WriteFile(dbPath, data, 0644)
-		os.Remove(bakPath)
-	} else {
-		os.Remove(dbPath)
-	}
-}
-
 func readLogsFile(t *testing.T, path string) []LogEntry {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Failed to read logs file: %v", err)
-	}
-
-	var logs []LogEntry
-	if err := json.Unmarshal(data, &logs); err != nil {
-		t.Fatalf("Failed to decode logs: %v", err)
-	}
-	return logs
+	return readLogsFromFile(path)
 }
 
 func writeLogsFile(t *testing.T, path string, logs []LogEntry) {
 	t.Helper()
-	data, err := json.MarshalIndent(logs, "", "  ")
-	if err != nil {
-		t.Fatalf("Failed to encode logs: %v", err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatalf("Failed to write logs: %v", err)
-	}
+	saveLogsToFile(path, logs)
 }
 
 func exportPathFromOutput(output string) string {
@@ -71,10 +34,7 @@ func exportPathFromOutput(output string) string {
 }
 
 func TestTracker(t *testing.T) {
-	bakPath := setupTestDB()
-	defer restoreTestDB(bakPath)
-
-	cwd, _ := os.Getwd()
+	testHome := t.TempDir()
 
 	cmd := exec.Command("go", "build", "-o", "tracker_test_bin.exe", "../../cmd/atrack")
 	if err := cmd.Run(); err != nil {
@@ -85,7 +45,7 @@ func TestTracker(t *testing.T) {
 	openRouterURL := ""
 	runCmd := func(args ...string) (string, error) {
 		cmd := exec.Command("./tracker_test_bin.exe", args...)
-		env := append(os.Environ(), "ATRACK_HOME="+cwd)
+		env := append(os.Environ(), "ATRACK_HOME="+testHome)
 		if openRouterURL != "" {
 			env = append(env, "ATRACK_OPENROUTER_MODELS_URL="+openRouterURL)
 		}
@@ -103,14 +63,13 @@ func TestTracker(t *testing.T) {
 			"rotation": "none"
 		}
 	}`
-	os.WriteFile(filepath.Join(cwd, "config.json"), []byte(testConfig), 0644)
-	defer os.Remove(filepath.Join(cwd, "config.json"))
+	os.WriteFile(filepath.Join(testHome, "config.json"), []byte(testConfig), 0644)
 
 	if _, err := runCmd("clear"); err != nil {
 		t.Fatalf("Failed to clear logs: %v", err)
 	}
 
-	dbPath := filepath.Join(cwd, "atrack_logs.json")
+	dbPath := filepath.Join(testHome, "atrack_logs.jsonl")
 
 	if _, err := runCmd("log", "Test message", "-c", "TestCategory", "-t", "bug,backend"); err != nil {
 		t.Fatalf("Log command failed: %v", err)
@@ -388,5 +347,74 @@ func TestTracker(t *testing.T) {
 	}
 	if !strings.Contains(out, "display.max_logs_view = 50") {
 		t.Fatalf("Config reset did not restore defaults: %s", out)
+	}
+}
+
+func TestReadLogsFromFileHandlesLongJSONLLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "long.jsonl")
+	entry := LogEntry{
+		Timestamp: "2026-05-10 10:00:00",
+		Category:  "AutoLog",
+		Question:  strings.Repeat("q", 70*1024),
+		Answer:    "ok",
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Failed to marshal entry: %v", err)
+	}
+	if err := os.WriteFile(logPath, append(data, '\n'), 0644); err != nil {
+		t.Fatalf("Failed to write log file: %v", err)
+	}
+
+	logs := readLogsFromFile(logPath)
+	if len(logs) != 1 {
+		t.Fatalf("Expected 1 log, got %d", len(logs))
+	}
+	if logs[0].Question != entry.Question {
+		t.Fatalf("Long question was not preserved")
+	}
+}
+
+func TestRenderLogsHandlesShortTimestampAndCategory(t *testing.T) {
+	oldConfig := config
+	config = defaultConfig()
+	config.Display.ReverseOrder = false
+	config.Display.MaxLogsView = 10
+	defer func() {
+		config = oldConfig
+	}()
+
+	logs := []LogEntry{{
+		Timestamp: "bad",
+		Category:  "QA",
+		Message:   "short fields",
+	}}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create stdout pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	renderLogs(logs)
+	w.Close()
+
+	var output bytes.Buffer
+	if _, err := output.ReadFrom(r); err != nil {
+		t.Fatalf("Failed to read render output: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "bad") {
+		t.Fatalf("Expected fallback timestamp in output: %s", out)
+	}
+	if !strings.Contains(out, "QA") {
+		t.Fatalf("Expected short category in output: %s", out)
 	}
 }

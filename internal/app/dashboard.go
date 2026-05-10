@@ -21,6 +21,12 @@ func runDashboard() {
 	tview.Styles.MoreContrastBackgroundColor = tcell.ColorDefault
 
 	app := tview.NewApplication()
+	var layout tview.Primitive
+	restoreDashboard := func() {
+		if layout != nil {
+			app.SetRoot(layout, true)
+		}
+	}
 
 	// Header
 	header := tview.NewTextView().
@@ -36,13 +42,13 @@ func runDashboard() {
 		SetRegions(true).
 		SetWrap(false)
 
-	tabOverview := createOverviewTab()
+	tabOverview, updateOverview := createOverviewTab()
 	tabLogs := createLogsTab(app)
-	tabStats := createStatsTab()
-	tabTrends := createTrendsTab()
-	tabCost := createCostTab()
+	tabStats, updateStats := createStatsTab()
+	tabTrends, updateTrends := createTrendsTab()
+	tabCost, updateCost := createCostTab()
 	tabSearch := createSearchTab(app)
-	tabSettings := createSettingsTab(app)
+	tabSettings := createSettingsTab(app, restoreDashboard)
 
 	infoPages.AddPage("Overview", tabOverview, true, true)
 	infoPages.AddPage("Logs", tabLogs, true, false)
@@ -65,13 +71,42 @@ func runDashboard() {
 		}
 	}
 
+	activeTabName := "Overview"
 	updateTabBar("Overview")
 	tabBar.SetHighlightedFunc(func(added, removed, remaining []string) {
 		if len(added) > 0 {
+			activeTabName = added[0]
 			infoPages.SwitchToPage(added[0])
 			updateTabBar(added[0])
 		}
 	})
+
+	// Global Auto-Refresh Ticker
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				app.QueueUpdateDraw(func() {
+					// Refresh header time
+					header.SetText(fmt.Sprintf("[yellow::b]AgentTrack Dashboard[white] | [green]%s", time.Now().Format("2006-01-02 15:04")))
+
+					// Refresh active tab data
+					switch activeTabName {
+					case "Overview":
+						updateOverview()
+					case "Stats":
+						updateStats()
+					case "Trends":
+						updateTrends()
+					case "Cost":
+						updateCost()
+					}
+				})
+			}
+		}
+	}()
 
 	// Footer
 	footer := tview.NewTextView().
@@ -107,7 +142,7 @@ func runDashboard() {
 		return event
 	})
 
-	layout := tview.NewFlex().SetDirection(tview.FlexRow).
+	layout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(header, 1, 0, false).
 		AddItem(tabBar, 1, 0, false).
 		AddItem(infoPages, 0, 1, true).
@@ -118,7 +153,7 @@ func runDashboard() {
 	}
 }
 
-func createOverviewTab() tview.Primitive {
+func createOverviewTab() (tview.Primitive, func()) {
 	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow)
 
 	// Mode state
@@ -157,7 +192,7 @@ func createOverviewTab() tview.Primitive {
 
 		for _, l := range logs {
 			logTime, err := time.Parse("2006-01-02 15:04:05", l.Timestamp)
-			if err == nil && logTime.After(cutoff) {
+			if err == nil && !logTime.Before(cutoff) {
 				filteredLogs = append(filteredLogs, l)
 				tIn += l.TokensIn
 				tOut += l.TokensOut
@@ -257,7 +292,7 @@ Estimated Cost: [green]%s %.4f[white]`, title, len(filteredLogs), tIn+tOut, tIn,
 	mainFlex.AddItem(filterForm, 3, 0, true).
 		AddItem(contentArea, 0, 1, false)
 
-	return mainFlex
+	return mainFlex, updateOverview
 }
 
 func createLogsTab(app *tview.Application) tview.Primitive {
@@ -425,10 +460,8 @@ func createLogsTab(app *tview.Application) tview.Primitive {
 		AddItem(contentFlex, 0, 1, true)
 }
 
-func createStatsTab() tview.Primitive {
-	logs := getLogsFromAllFiles()
-	rows := collectModelStats(logs)
-
+func createStatsTab() (tview.Primitive, func()) {
+	var rows []ModelStats
 	// Bar chart metric selector
 	metric := "Logs" // default
 	chartView := tview.NewTextView().SetDynamicColors(true).SetWrap(false)
@@ -437,6 +470,8 @@ func createStatsTab() tview.Primitive {
 	barColors := []string{"green", "yellow", "blue", "red", "cyan", "purple", "white", "teal"}
 
 	renderChart := func() {
+		logs := getLogsFromAllFiles()
+		rows = collectModelStats(logs)
 		chartView.Clear()
 		if len(rows) == 0 {
 			fmt.Fprintf(chartView, "\n  [gray]No data available.[white]")
@@ -517,10 +552,10 @@ func createStatsTab() tview.Primitive {
 		AddItem(metricForm, 3, 0, true).
 		AddItem(chartView, 0, 1, false)
 
-	return flex
+	return flex, renderChart
 }
 
-func createTrendsTab() tview.Primitive {
+func createTrendsTab() (tview.Primitive, func()) {
 	metric := "Logs"
 	chartView := tview.NewTextView().SetDynamicColors(true).SetWrap(false)
 	chartView.SetBorder(true).SetTitle(" Daily Trends ")
@@ -634,14 +669,15 @@ func createTrendsTab() tview.Primitive {
 
 	renderChart()
 
-	return tview.NewFlex().SetDirection(tview.FlexRow).
+	flex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(metricForm, 3, 0, true).
 		AddItem(chartView, 0, 1, false)
+
+	return flex, renderChart
 }
 
-func createCostTab() tview.Primitive {
-	logs := getLogsFromAllFiles()
-	rows := collectModelStats(logs)
+func createCostTab() (tview.Primitive, func()) {
+	mainFlex := tview.NewFlex()
 
 	summaryView := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
 	summaryView.SetBorder(true).SetTitle(" Summary ")
@@ -649,93 +685,102 @@ func createCostTab() tview.Primitive {
 	costTable := tview.NewTable().SetBorders(true)
 	costTable.SetBorder(true).SetTitle(" Cost Breakdown ")
 
-	formatCost := func(amount float64, ok bool) string {
-		if !ok {
-			return "n/a"
-		}
-		return fmt.Sprintf("%s %.4f", config.Pricing.Currency, amount)
-	}
+	updateCost := func() {
+		logs := getLogsFromAllFiles()
+		rows := collectModelStats(logs)
+		summaryView.Clear()
+		costTable.Clear()
 
-	now := time.Now()
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	var todayCost, weekCost, monthCost, totalCost float64
-	var hasToday, hasWeek, hasMonth, hasTotal bool
-
-	for _, log := range logs {
-		cost, ok := calculateLogCost(log)
-		if !ok {
-			continue
+		formatCost := func(amount float64, ok bool) string {
+			if !ok {
+				return "n/a"
+			}
+			return fmt.Sprintf("%s %.4f", config.Pricing.Currency, amount)
 		}
 
-		totalCost += cost
-		hasTotal = true
+		now := time.Now()
+		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		var todayCost, weekCost, monthCost, totalCost float64
+		var hasToday, hasWeek, hasMonth, hasTotal bool
 
-		logTime, err := parseTimestamp(log.Timestamp)
-		if err != nil {
-			continue
+		for _, log := range logs {
+			cost, ok := calculateLogCost(log)
+			if !ok {
+				continue
+			}
+
+			totalCost += cost
+			hasTotal = true
+
+			logTime, err := parseTimestamp(log.Timestamp)
+			if err != nil {
+				continue
+			}
+
+			if !logTime.Before(startOfDay) {
+				todayCost += cost
+				hasToday = true
+			}
+
+			age := time.Since(logTime)
+			if age >= 0 && age <= 7*24*time.Hour {
+				weekCost += cost
+				hasWeek = true
+			}
+			if age >= 0 && age <= 30*24*time.Hour {
+				monthCost += cost
+				hasMonth = true
+			}
 		}
 
-		if !logTime.Before(startOfDay) {
-			todayCost += cost
-			hasToday = true
-		}
-
-		age := time.Since(logTime)
-		if age >= 0 && age <= 7*24*time.Hour {
-			weekCost += cost
-			hasWeek = true
-		}
-		if age >= 0 && age <= 30*24*time.Hour {
-			monthCost += cost
-			hasMonth = true
-		}
-	}
-
-	estimatedMonthlyCost := monthCost / 30.0 * 30.0
-	summaryText := fmt.Sprintf(`[yellow::b]Today's cost:[white::-] %s
+		estimatedMonthlyCost := monthCost / 30.0 * 30.0
+		summaryText := fmt.Sprintf(`[yellow::b]Today's cost:[white::-] %s
 [yellow::b]This week's cost:[white::-] %s
 [yellow::b]This month's cost:[white::-] %s
 [yellow::b]Total all-time cost:[white::-] %s
 [yellow::b]Estimated monthly cost:[white::-] %s`,
-		formatCost(todayCost, hasToday),
-		formatCost(weekCost, hasWeek),
-		formatCost(monthCost, hasMonth),
-		formatCost(totalCost, hasTotal),
-		formatCost(estimatedMonthlyCost, hasMonth),
-	)
-	summaryView.SetText(summaryText)
+			formatCost(todayCost, hasToday),
+			formatCost(weekCost, hasWeek),
+			formatCost(monthCost, hasMonth),
+			formatCost(totalCost, hasTotal),
+			formatCost(estimatedMonthlyCost, hasMonth),
+		)
+		summaryView.SetText(summaryText)
 
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].HasCost != rows[j].HasCost {
-			return rows[i].HasCost
-		}
-		if rows[i].Cost == rows[j].Cost {
-			return strings.ToLower(rows[i].Model) < strings.ToLower(rows[j].Model)
-		}
-		return rows[i].Cost > rows[j].Cost
-	})
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].HasCost != rows[j].HasCost {
+				return rows[i].HasCost
+			}
+			if rows[i].Cost == rows[j].Cost {
+				return strings.ToLower(rows[i].Model) < strings.ToLower(rows[j].Model)
+			}
+			return rows[i].Cost > rows[j].Cost
+		})
 
-	headers := []string{"Model", "Logs", "Total Tokens", "Cost"}
-	for i, h := range headers {
-		costTable.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false).SetExpansion(1))
+		headers := []string{"Model", "Logs", "Total Tokens", "Cost"}
+		for i, h := range headers {
+			costTable.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false).SetExpansion(1))
+		}
+
+		for rowIdx, row := range rows {
+			tokens := row.TokensIn + row.TokensOut
+			costText := "n/a"
+			if row.HasCost {
+				costText = fmt.Sprintf("%s %.4f", config.Pricing.Currency, row.Cost)
+			}
+
+			costTable.SetCell(rowIdx+1, 0, tview.NewTableCell(row.Model).SetTextColor(tcell.ColorBlue))
+			costTable.SetCell(rowIdx+1, 1, tview.NewTableCell(fmt.Sprintf("%d", row.Logs)).SetTextColor(tcell.ColorWhite))
+			costTable.SetCell(rowIdx+1, 2, tview.NewTableCell(fmt.Sprintf("%d", tokens)).SetTextColor(tcell.ColorYellow))
+			costTable.SetCell(rowIdx+1, 3, tview.NewTableCell(costText).SetTextColor(tcell.ColorGreen))
+		}
 	}
 
-	for rowIdx, row := range rows {
-		tokens := row.TokensIn + row.TokensOut
-		costText := "n/a"
-		if row.HasCost {
-			costText = fmt.Sprintf("%s %.4f", config.Pricing.Currency, row.Cost)
-		}
-
-		costTable.SetCell(rowIdx+1, 0, tview.NewTableCell(row.Model).SetTextColor(tcell.ColorBlue))
-		costTable.SetCell(rowIdx+1, 1, tview.NewTableCell(fmt.Sprintf("%d", row.Logs)).SetTextColor(tcell.ColorWhite))
-		costTable.SetCell(rowIdx+1, 2, tview.NewTableCell(fmt.Sprintf("%d", tokens)).SetTextColor(tcell.ColorYellow))
-		costTable.SetCell(rowIdx+1, 3, tview.NewTableCell(costText).SetTextColor(tcell.ColorGreen))
-	}
-
-	return tview.NewFlex().
-		AddItem(summaryView, 0, 1, false).
+	updateCost()
+	mainFlex.AddItem(summaryView, 0, 1, false).
 		AddItem(costTable, 0, 2, true)
+
+	return mainFlex, updateCost
 }
 
 func createSearchTab(app *tview.Application) tview.Primitive {
@@ -852,7 +897,7 @@ func createSearchTab(app *tview.Application) tview.Primitive {
 	return mainFlex
 }
 
-func createSettingsTab(app *tview.Application) tview.Primitive {
+func createSettingsTab(app *tview.Application, restoreDashboard func()) tview.Primitive {
 	form := tview.NewForm()
 
 	form.SetBorder(true).SetTitle(" Application Settings ").SetTitleAlign(tview.AlignLeft)
@@ -873,15 +918,15 @@ func createSettingsTab(app *tview.Application) tview.Primitive {
 	// Export buttons at the top
 	form.AddButton("Export MD", func() {
 		exportLogs("md")
-		showModal(app, "Export", "Logs exported to Markdown file.")
+		showModal(app, restoreDashboard, "Export", "Logs exported to Markdown file.")
 	})
 	form.AddButton("Export CSV", func() {
 		exportLogs("csv")
-		showModal(app, "Export", "Logs exported to CSV file.")
+		showModal(app, restoreDashboard, "Export", "Logs exported to CSV file.")
 	})
 	form.AddButton("Export JSON", func() {
 		exportLogs("json")
-		showModal(app, "Export", "Logs exported to JSON file.")
+		showModal(app, restoreDashboard, "Export", "Logs exported to JSON file.")
 	})
 
 	form.AddInputField("Project Name", config.ProjectName, 30, nil, func(text string) {
@@ -924,9 +969,9 @@ func createSettingsTab(app *tview.Application) tview.Primitive {
 
 	form.AddButton("Save Changes", func() {
 		if err := saveConfig(); err == nil {
-			showModal(app, "Success", "Configuration saved successfully!")
+			showModal(app, restoreDashboard, "Success", "Configuration saved successfully!")
 		} else {
-			showModal(app, "Error", fmt.Sprintf("Failed to save config: %v", err))
+			showModal(app, restoreDashboard, "Error", fmt.Sprintf("Failed to save config: %v", err))
 		}
 	})
 
@@ -937,10 +982,9 @@ func createSettingsTab(app *tview.Application) tview.Primitive {
 			SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 				if buttonLabel == "Clear" {
 					clearLogs()
-					showModal(app, "Success", "All logs have been cleared.")
+					showModal(app, restoreDashboard, "Success", "All logs have been cleared.")
 				} else {
-					app.SetRoot(createSettingsTab(app), true)
-					runDashboard()
+					restoreDashboard()
 				}
 			})
 		app.SetRoot(confirmModal, true)
@@ -948,7 +992,7 @@ func createSettingsTab(app *tview.Application) tview.Primitive {
 
 	form.AddButton("Reset Defaults", func() {
 		config = defaultConfig()
-		app.SetRoot(createSettingsTab(app), true) // Refresh
+		restoreDashboard()
 	})
 
 	// Database Storage info at the bottom
@@ -960,16 +1004,12 @@ func createSettingsTab(app *tview.Application) tview.Primitive {
 		AddItem(nil, 1, 0, false)
 }
 
-func showModal(app *tview.Application, title, message string) {
+func showModal(app *tview.Application, restoreDashboard func(), title, message string) {
 	modal := tview.NewModal().
 		SetText(message).
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			app.SetRoot(tview.NewFlex().SetDirection(tview.FlexRow).
-				// This is a simplified way to return to dashboard
-				// In a real app, you'd want to go back to the previous page
-				AddItem(nil, 0, 1, true), true)
-			runDashboard() // Re-run to refresh state
+			restoreDashboard()
 		})
 
 	app.SetRoot(modal, true)

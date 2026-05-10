@@ -45,7 +45,7 @@ nfpms:
     homepage: "https://github.com/alfaXphoori/AgentTrack"
     maintainer: "alfaXphoori"
     description: "Terminal CLI tool for tracking AI agent interactions"
-    license: "MIT"
+    license: "Apache-2.0"
     formats:
       - deb
       - rpm
@@ -69,7 +69,7 @@ brews:
       name: homebrew-agenttrack
     homepage: "https://github.com/alfaXphoori/AgentTrack"
     description: "Terminal CLI tool for tracking AI agent interactions"
-    license: "MIT"
+    license: "Apache-2.0"
     directory: Formula
     install: |
       bin.install "atrack"
@@ -77,6 +77,16 @@ brews:
       bin.install "scripts/gemini-cli-atrack.sh" => "gemini-cli-atrack"
     test: |
       system "#{bin}/atrack", "--version"
+
+scoops:
+  - name: atrack
+    repository:
+      owner: alfaXphoori
+      name: scoop-bucket
+    homepage: "https://github.com/alfaXphoori/AgentTrack"
+    description: "Terminal CLI tool for tracking AI agent interactions"
+    license: "Apache-2.0"
+    directory: bucket
 
 changelog:
   sort: asc
