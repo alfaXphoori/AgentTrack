@@ -32,7 +32,7 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ## 📦 Installation
 
-<details open>
+<details>
 <summary><b>🍺 Homebrew (macOS / Linux) — Recommended</b></summary>
 
 ```bash
