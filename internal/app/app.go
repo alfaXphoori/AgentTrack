@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1281,6 +1282,25 @@ func uninstallApp(skipConfirm bool) {
 	fmt.Println("AgentTrack uninstall complete.")
 }
 
+func updateApp() {
+	fmt.Println("🔄 Updating AgentTrack...")
+	fmt.Println("Attempting to update via 'go install'...")
+	
+	cmd := exec.Command("go", "install", "github.com/alfaXphoori/AgentTrack/cmd/atrack@latest")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	
+	if err := cmd.Run(); err != nil {
+		fmt.Println("\n❌ Update failed or 'go' is not installed.")
+		fmt.Println("\nPlease update manually based on your installation method:")
+		fmt.Println("  " + ColorCyan + "Homebrew" + ColorReset + " (macOS/Linux): brew upgrade atrack")
+		fmt.Println("  " + ColorCyan + "Scoop" + ColorReset + " (Windows):        scoop update atrack")
+		fmt.Println("  " + ColorCyan + "Binary Release:" + ColorReset + "       Download the latest version from https://github.com/alfaXphoori/AgentTrack/releases")
+	} else {
+		fmt.Println("\n✅ " + ColorGreen + "AgentTrack updated successfully!" + ColorReset)
+	}
+}
+
 func watchLogs(interval time.Duration) {
 	loadConfig()
 	fmt.Printf(ColorCyan+"👀 Watching for new AgentTrack logs in real-time... (Interval: %v, Press Ctrl+C to stop)\n"+ColorReset, interval)
@@ -1553,6 +1573,9 @@ func Run() {
 	case "uninstall":
 		uninstallApp(hasConfirmFlag(os.Args[2:]))
 
+	case "update":
+		updateApp()
+
 	case "summary":
 		period := "today"
 		if len(os.Args) > 2 {
@@ -1660,7 +1683,7 @@ func Run() {
 			showConfigHelp()
 		}
 
-	case "help", "?":
+	case "help", "-h", "--help":
 		printFullUsage()
 
 	default:
@@ -2337,7 +2360,7 @@ func printUsage() {
 	printUsageItem(`atrack dashboard`, "Open the interactive CLI dashboard")
 	printUsageItem(`atrack stats [today|model]`, "Show your activity statistics")
 	printUsageItem(`atrack summary`, "Get a quick activity summary")
-	printUsageItem(`atrack help | ?`, "Show all available commands and detailed usage")
+	printUsageItem(`atrack help | -h`, "Show all available commands and detailed usage")
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "⚡ Quick start" + ColorReset)
@@ -2376,6 +2399,7 @@ func printFullUsage() {
 	fmt.Println()
 
 	fmt.Println(ColorCyan + "🛠 Management" + ColorReset)
+	printUsageItem(`atrack init`, "Initialize AgentTrack rules in the current project")
 	printUsageItem(`atrack edit <index> [field] <value>`, "Edit a log entry")
 	printUsageItem(`atrack delete <index>`, "Delete a log entry")
 	printUsageItem(`atrack export [md|csv|json]`, "Export data to files")
@@ -2383,6 +2407,7 @@ func printFullUsage() {
 	printUsageItem(`atrack config [show|get|set|reset]`, "Manage application configuration")
 	printUsageItem(`atrack reset [--yes]`, "Delete all logs and reset config to defaults")
 	printUsageItem(`atrack uninstall [--yes]`, "Remove app data, shell hooks, and local atrack binary")
+	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")
 	printUsageItem(`atrack info`, "Show system paths and info")
 	printUsageItem(`atrack version`, "Show app version")
 	printUsageItem(`atrack clear`, "Wipe all log data")
