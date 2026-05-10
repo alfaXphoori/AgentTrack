@@ -1,8 +1,10 @@
 <div align="center">
-
-
 <img src="assets/logo.png" alt="AgentTrack Logo" width="420" />
+
+# 🤖 AgentTrack
+
 ### ⚡ AI Activity Tracker for the Terminal
+
 [![Version](https://img.shields.io/badge/version-0.13.7-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
