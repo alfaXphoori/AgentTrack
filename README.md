@@ -41,6 +41,8 @@ brew tap alfaXphoori/agenttrack
 brew install atrack
 ```
 
+> Note: This currently requires a published tap repository at `alfaXphoori/homebrew-agenttrack`.
+
 </details>
 
 <details>
@@ -62,6 +64,8 @@ go install ./cmd/atrack
 go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
 ```
 
+> Note: This repository is private, so `go install` requires authenticated GitHub access.
+
 </details>
 
 <details>
@@ -69,7 +73,7 @@ go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
 
 Download the latest release from [GitHub Releases](https://github.com/alfaXphoori/AgentTrack/releases):
 ```bash
-tar -xzf atrack_linux_amd64.tar.gz
+tar -xzf AgentTrack_Linux_x86_64.tar.gz
 sudo mv atrack /usr/local/bin/
 ```
 
@@ -90,6 +94,8 @@ scoop update atrack
 scoop uninstall atrack
 ```
 
+> Note: This currently requires a published bucket repository at `alfaXphoori/scoop-bucket`.
+
 </details>
 
 <details>
@@ -105,7 +111,7 @@ go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
 <details>
 <summary><b>📦 Windows — Manual Binary Install</b></summary>
 
-1. Download `atrack_windows_amd64.zip` from [Releases](https://github.com/alfaXphoori/AgentTrack/releases).
+1. Download `AgentTrack_Windows_x86_64.zip` from [Releases](https://github.com/alfaXphoori/AgentTrack/releases).
 2. Extract `atrack.exe` to a folder (e.g., `C:\atrack`).
 3. Add that folder to your System **PATH**.
 
