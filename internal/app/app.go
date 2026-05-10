@@ -1172,6 +1172,10 @@ func removeInstallHooks() {
 		return
 	}
 
+	if err := uninstallAutoStartService(); err != nil {
+		fmt.Printf("Warning: could not remove auto-start service: %v\n", err)
+	}
+
 	profiles := []string{
 		filepath.Join(home, ".zshrc"),
 		filepath.Join(home, ".bashrc"),
@@ -1576,6 +1580,9 @@ func Run() {
 	case "update":
 		updateApp()
 
+	case "autostart":
+		handleAutoStartCommand(os.Args[2:])
+
 	case "summary":
 		period := "today"
 		if len(os.Args) > 2 {
@@ -1808,6 +1815,8 @@ func getConfigValue(key string) (string, error) {
 		return strconv.FormatBool(config.Display.Quiet), nil
 	case "rotation", "storage.rotation":
 		return config.Storage.Rotation, nil
+	case "auto_run":
+		return strconv.FormatBool(config.AutoRun), nil
 	case "storage.log_file_prefix":
 		return config.Storage.LogFilePrefix, nil
 	case "pricing.currency":
@@ -2360,6 +2369,7 @@ func printUsage() {
 	printUsageItem(`atrack dashboard`, "Open the interactive CLI dashboard")
 	printUsageItem(`atrack stats [today|model]`, "Show your activity statistics")
 	printUsageItem(`atrack summary`, "Get a quick activity summary")
+	printUsageItem(`atrack autostart [install|uninstall|run]`, "Manage the background auto-run service")
 	printUsageItem(`atrack help | -h`, "Show all available commands and detailed usage")
 	fmt.Println()
 
@@ -2405,6 +2415,7 @@ func printFullUsage() {
 	printUsageItem(`atrack export [md|csv|json]`, "Export data to files")
 	printUsageItem(`atrack pricing sync [all|model]`, "Sync model prices from OpenRouter")
 	printUsageItem(`atrack config [show|get|set|reset]`, "Manage application configuration")
+	printUsageItem(`atrack autostart [install|uninstall|run]`, "Install or run the auto-start service")
 	printUsageItem(`atrack reset [--yes]`, "Delete all logs and reset config to defaults")
 	printUsageItem(`atrack uninstall [--yes]`, "Remove app data, shell hooks, and local atrack binary")
 	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")

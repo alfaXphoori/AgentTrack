@@ -39,6 +39,7 @@ archives:
       - scripts/gemini-cli-atrack.sh
       - scripts/auto-run-service.sh
       - scripts/vscode-copilot-watcher.sh
+      - scripts/install-windows.ps1
 
 nfpms:
   - vendor: AgentTrack
@@ -75,6 +76,7 @@ brews:
       bin.install "atrack"
       bin.install "scripts/gemiatrack.sh" => "gemiatrack"
       bin.install "scripts/gemini-cli-atrack.sh" => "gemini-cli-atrack"
+      system bin/"atrack", "autostart", "install"
     test: |
       system "#{bin}/atrack", "--version"
 
@@ -87,6 +89,8 @@ scoops:
     description: "Terminal CLI tool for tracking AI agent interactions"
     license: "Apache-2.0"
     directory: bucket
+    post_install:
+      - "& \"$dir\\atrack.exe\" autostart install"
 
 changelog:
   sort: asc

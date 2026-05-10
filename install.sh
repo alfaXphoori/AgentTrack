@@ -3,6 +3,8 @@ set -e
 
 echo "🚀 Installing AgentTrack..."
 
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 1. Check for Go
 if ! command -v go &> /dev/null; then
     echo "❌ Error: Go is not installed. Please install Go first."
@@ -13,6 +15,9 @@ fi
 echo "📦 Building and installing AgentTrack CLI globally..."
 go build -o atrack ./cmd/atrack
 go install ./cmd/atrack
+
+echo "🔧 Enabling AgentTrack auto-run..."
+"$REPO_DIR/atrack" autostart install
 
 # Detect user shell profile
 PROFILE_FILE=""
@@ -99,11 +104,6 @@ EOF
 else
     echo "⚠️ Could not determine shell profile file. Skipping hooks."
 fi
-
-# 5. Start Background Watchers
-echo "👁️ Setting up Background Watchers (Gemini & VS Code Copilot)..."
-bash ./scripts/gemini-cli-atrack.sh &>/dev/null &
-bash ./scripts/vscode-copilot-watcher.sh &>/dev/null &
 
 echo ""
 echo "🎉 AgentTrack Installation Complete!"
