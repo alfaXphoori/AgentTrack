@@ -6,7 +6,7 @@
 [![Version](https://img.shields.io/badge/version-0.13.8-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#installation)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
 
 Track every AI interaction across **Cursor, Copilot, Gemini CLI, Claude Code, Aider** and more — *automatically*.  
 Token counts, costs, summaries, and a full TUI dashboard — all directly in your terminal.
@@ -251,6 +251,35 @@ atrack reset --yes           # non-interactive reset
 atrack uninstall             # interactive uninstall (remove data/hooks/binary)
 atrack uninstall --yes       # non-interactive uninstall
 ```
+
+### ⚙️ Atrack Function Reference
+
+| Command | What it does |
+|:---|:---|
+| `atrack init` | Initialize rule files for supported AI agents in the current project. |
+| `atrack log` | Add a manual log entry. |
+| `atrack auto` | Record AI Q&A logs (used by wrappers/watchers). |
+| `atrack list` | Show logs (supports date/model/category filters). |
+| `atrack search` | Search logs by keyword, model, or tag. |
+| `atrack summary` | Show summary for today/week/month. |
+| `atrack stats` | Show usage and token statistics. |
+| `atrack stats model` | Show per-model usage breakdown. |
+| `atrack stats cost` | Show estimated cost by model. |
+| `atrack pricing sync` | Sync model pricing from OpenRouter. |
+| `atrack dashboard` | Open the interactive terminal dashboard. |
+| `atrack watch` | Live watch logs in terminal. |
+| `atrack tag list` | List all used tags. |
+| `atrack edit` | Edit a log entry by index. |
+| `atrack delete` | Delete a log entry by index. |
+| `atrack clear` | Clear all logs. |
+| `atrack export` | Export logs as `md`, `csv`, or `json`. |
+| `atrack config` | Show/get/set/reset configuration values. |
+| `atrack reset` | Delete logs and reset config to defaults. |
+| `atrack uninstall` | Remove app data/hooks and local binary. |
+| `atrack update` | Attempt to update AgentTrack and show fallback instructions. |
+| `atrack info` | Show version/path/runtime info. |
+| `atrack version` | Show current CLI version. |
+| `atrack help`, `atrack -h`, `atrack --help` | Show command help. |
 
 ---
 
