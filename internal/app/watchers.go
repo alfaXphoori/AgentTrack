@@ -204,6 +204,8 @@ func watchCopilot() {
 	switch runtime.GOOS {
 	case "darwin":
 		storagePath = filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "workspaceStorage")
+	case "windows":
+		storagePath = filepath.Join(os.Getenv("APPDATA"), "Code", "User", "workspaceStorage")
 	default: // linux and others
 		storagePath = filepath.Join(homeDir, ".config", "Code", "User", "workspaceStorage")
 	}

@@ -1341,13 +1341,20 @@ func watchLogs(interval time.Duration) {
 }
 
 func initRules() {
-	ruleContent := `# AgentTrack Log Trigger
+	executable, err := serviceExecutablePath()
+	if err != nil {
+		executable = "atrack"
+	}
+	// Use forward slashes for cross-platform compatibility in rule files
+	executable = filepath.ToSlash(executable)
+
+	ruleContent := fmt.Sprintf(`# AgentTrack Log Trigger
 On every chat turn, you MUST execute this shell command to log the activity:
-/Users/phoori/go/bin/atrack auto "<user_q>" "<ai_a_summary>" "<model>" 0 0
+"%s" auto "<user_q>" "<ai_a_summary>" "<model>" 0 0
 - Q: Short prompt summary.
 - A: Short answer summary (max 50 chars).
 - Do not add conversational filler.
-`
+`, executable)
 	files := []string{
 		".cursorrules",
 		".clinerules",
