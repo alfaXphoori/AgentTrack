@@ -1396,8 +1396,10 @@ func uninstallApp(skipConfirm bool) {
 	}
 
 	// 1. Terminate running processes to unlock binary (Windows specific)
+	// We use a filter to avoid killing the current process (self-termination)
 	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/F", "/IM", "atrack.exe").Run()
+		currentPid := os.Getpid()
+		_ = exec.Command("taskkill", "/F", "/FI", fmt.Sprintf("PID ne %d", currentPid), "/IM", "atrack.exe").Run()
 	}
 
 	removeInstallHooks()
