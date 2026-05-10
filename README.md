@@ -305,40 +305,9 @@ Run `atrack init` in any project to auto-generate rule files for all supported a
 
 ---
 
-## 📁 Project Structure
-
-```text
-AgentTrack/
-├── cmd/atrack/                # Application entrypoint
-│   └── main.go
-├── internal/app/              # Core logic & TUI components
-│   ├── app.go
-│   ├── dashboard.go
-│   ├── timezones.go
-│   └── watchers.go
-├── scripts/
-│   ├── gemini-cli-atrack.sh   # Gemini CLI background watcher
-│   ├── gemiatrack.sh          # Gemini CLI interactive wrapper
-│   ├── vscode-copilot-watcher.sh  # VS Code Copilot background watcher
-│   ├── cursor-atrack.sh       # Cursor IDE wrapper
-│   ├── auto-run-service.sh    # Auto-start service helper
-│   └── atrack-base.sh         # Shared utilities
-├── agent-rules/               # AI agent rule templates
-│   ├── AGENTS.md
-│   ├── CLAUDE.md
-│   └── QWEN.md
-├── integrations/              # Per-agent integration guides
-└── ~/.atrack/                 # Data directory (auto-created)
-    ├── config.json
-    └── atrack_logs_YYYY_MM.json
-```
-
----
-
 ## 📄 License
 
 This project is licensed under the **Apache License 2.0**.  
 See the [LICENSE](LICENSE) file for the full license text.
 
 Built with ❤️ by [alfaXphoori](https://github.com/alfaXphoori) and the open-source community.
-
