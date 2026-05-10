@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/Atrack.png" alt="AgentTrack Logo" width="420" />
+<img src="assets/Atrack.png" alt="AgentTrack Logo" width="480" />
 
 ### ⚡ AI Activity Tracker for the Terminal
 
