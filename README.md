@@ -21,8 +21,11 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 | Feature | Description |
 |:---|:---|
-| 🚀 **Initial Release** | First stable version of AgentTrack with multi-agent support and TUI dashboard. |
-| 🪟 **Windows Optimized** | Native support for Windows paths and VS Code log detection. |
+| 🚀 **Multi-turn Tracking** | Robust logic that consolidates multi-step AI responses (text + tools) into single log entries. |
+| 🪟 **Registry Autostart** | Modern Windows background service setup via Registry (**no Administrator rights required**). |
+| 🌍 **Global Auto-Init** | Shell hooks for **PowerShell, Zsh, and Bash** that automatically setup tracking rules in any project you enter. |
+| 🧹 **Clean Start (Prime)** | New `prime` logic to ignore historical AI data and only track interactions after installation. |
+| 🔄 **Smart Update** | `atrack update` now automatically refreshes background services after a successful build. |
 
 ---
 
@@ -36,8 +39,11 @@ If you are testing the latest local changes on this machine:
 # 1. Install from current folder
 go install ./cmd/atrack
 
-# 2. Setup autostart
+# 2. Setup autostart & global hooks
 atrack autostart install
+
+# 3. Activate hooks (first time only)
+. $PROFILE
 ```
 
 </details>
@@ -254,6 +260,7 @@ atrack uninstall --yes       # non-interactive uninstall
 | Command | What it does |
 |:---|:---|
 | `atrack init` | Initialize rule files for supported AI agents in the current project. |
+| `atrack prime` | Mark all existing AI history as logged (Clean Start). |
 | `atrack log` | Add a manual log entry. |
 | `atrack auto` | Record AI Q&A logs (used by wrappers/watchers). |
 | `atrack list` | Show logs (supports date/model/category filters). |
