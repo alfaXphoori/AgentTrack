@@ -25,8 +25,8 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 | 🧱 **Log Storage Hardening** | Switched to append-friendly JSONL handling with file locking and safer large-entry reads. |
 | 📺 **Dashboard Refresh** | Overview, Stats, Trends, and Cost tabs now refresh live without re-entering the dashboard app loop. |
 | 🧪 **Test Cleanup** | Test runs now use a temporary `ATRACK_HOME`, avoiding generated artifacts inside the source tree. |
-| 🪟 **Windows Packaging** | Added Scoop packaging support alongside the existing release pipeline. |
-| 📘 **Docs / UX** | Updated install and command docs to reflect reset, uninstall, and current packaging options. |
+| 🪟 **Windows Packaging** | Refined Windows installation paths around PowerShell, source build, and manual binary install. |
+| 📘 **Docs / UX** | Updated install and command docs to reflect reset, uninstall, and current installation options. |
 
 ---
 
@@ -79,26 +79,7 @@ sudo mv atrack /usr/local/bin/
 </details>
 
 <details>
-<summary><b>🍦 Windows — Scoop (Recommended)</b></summary>
-
-```powershell
-# one-time: add this bucket
-scoop bucket add atrack https://github.com/alfaXphoori/scoop-bucket.git
-
-# install AgentTrack
-scoop install atrack
-
-# optional: upgrade/remove later
-scoop update atrack
-scoop uninstall atrack
-```
-
-> Note: This currently requires a published bucket repository at `alfaXphoori/scoop-bucket`.
-
-</details>
-
-<details>
-<summary><b>🪟 Windows — PowerShell One-liner (Alternative)</b></summary>
+<summary><b>🪟 Windows — PowerShell One-liner (Recommended)</b></summary>
 
 ```powershell
 go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
