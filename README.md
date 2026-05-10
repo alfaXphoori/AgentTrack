@@ -282,20 +282,6 @@ Run `atrack init` in any project to auto-generate rule files for all supported a
 
 ---
 
-## 📄 License
-
-This project is licensed under the **Apache License 2.0**.  
-See the [LICENSE](LICENSE) file for the full license text.
-
-Built with ❤️ by [alfaXphoori](https://github.com/alfaXphoori) and the open-source community.
-
-wen-code.md) |
-| **Codex CLI** | [integrations/codex.md](integrations/codex.md) |
-| **Shell-GPT** | [integrations/sgpt.md](integrations/sgpt.md) |
-| **Open Interpreter** | [integrations/open-interpreter.md](integrations/open-interpreter.md) |
-| **Continue.dev** | [integrations/continue.md](integrations/continue.md) |
-
----
 
 ## 📄 License
 
