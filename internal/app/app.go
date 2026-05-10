@@ -90,7 +90,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.13.7"
+	Version     = "0.13.8"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
