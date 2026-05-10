@@ -3,7 +3,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.13.8-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.14.0-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
@@ -17,7 +17,7 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ---
 
-## ✨ What's New in v0.13.8
+## ✨ What's New in v0.14.0
 
 | Feature | Description |
 |:---|:---|
