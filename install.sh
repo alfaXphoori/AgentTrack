@@ -17,7 +17,8 @@ go build -o atrack ./cmd/atrack
 go install ./cmd/atrack
 
 echo "🔧 Enabling AgentTrack auto-run..."
-"$REPO_DIR/atrack" autostart install
+# Use the globally installed binary so the service points to ~/go/bin/atrack
+atrack autostart install
 
 # Detect user shell profile
 PROFILE_FILE=""

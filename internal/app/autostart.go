@@ -175,6 +175,26 @@ func uninstallAutoStartService() error {
 }
 
 func serviceExecutablePath() (string, error) {
+	// 1. Prefer GOPATH/bin — the canonical location after `go install`
+	if out, err := exec.Command("go", "env", "GOPATH").Output(); err == nil {
+		gopath := strings.TrimSpace(string(out))
+		candidate := filepath.Join(gopath, "bin", "atrack")
+		if runtime.GOOS == "windows" {
+			candidate += ".exe"
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	// 2. Look on PATH (covers Homebrew, apt, and other system installs)
+	if found, err := exec.LookPath("atrack"); err == nil {
+		resolved, err := filepath.EvalSymlinks(found)
+		if err == nil {
+			return resolved, nil
+		}
+		return found, nil
+	}
+	// 3. Last resort: the currently-running binary
 	return os.Executable()
 }
 
