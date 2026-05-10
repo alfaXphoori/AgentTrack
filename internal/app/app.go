@@ -1029,6 +1029,179 @@ func clearLogs() {
 	fmt.Println("All log files cleared.")
 }
 
+func hasConfirmFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--yes" || arg == "-y" {
+			return true
+		}
+	}
+	return false
+}
+
+func confirmAction(prompt string, skipConfirm bool) bool {
+	if skipConfirm {
+		return true
+	}
+
+	fmt.Print(prompt)
+	var input string
+	if _, err := fmt.Scanln(&input); err != nil {
+		return false
+	}
+	value := strings.ToLower(strings.TrimSpace(input))
+	return value == "y" || value == "yes"
+}
+
+func resetAppData(skipConfirm bool) {
+	loadConfig()
+	if !confirmAction(fmt.Sprintf("This will delete all logs and reset config in %s. Continue? [y/N]: ", appDir), skipConfirm) {
+		fmt.Println("Reset cancelled.")
+		return
+	}
+
+	files := getAllLogFiles()
+	for _, file := range files {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			fmt.Printf("Warning: could not remove %s: %v\n", file, err)
+		}
+	}
+
+	config = defaultConfig()
+	if err := saveConfig(); err != nil {
+		fmt.Printf("Error saving config: %v\n", err)
+		return
+	}
+
+	openRouterPricingCache = nil
+	openRouterPricingLoaded = false
+	fmt.Println("AgentTrack has been reset (logs deleted, config restored to defaults).")
+}
+
+func removeManagedBlocks(content string, block string) (string, bool) {
+	updated := strings.ReplaceAll(content, "\n"+block+"\n", "\n")
+	updated = strings.ReplaceAll(updated, "\n"+block, "")
+	updated = strings.ReplaceAll(updated, block+"\n", "")
+	updated = strings.ReplaceAll(updated, block, "")
+	return updated, updated != content
+}
+
+func removeInstallHooks() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Warning: could not resolve home directory: %v\n", err)
+		return
+	}
+
+	profiles := []string{
+		filepath.Join(home, ".zshrc"),
+		filepath.Join(home, ".bashrc"),
+		filepath.Join(home, ".bash_profile"),
+		filepath.Join(home, ".profile"),
+	}
+
+	copilotBlock := `# AgentTrack GitHub Copilot Wrapper
+gh_copilot_wrapper() {
+  if [ "$1" = "copilot" ] && [ "$2" = "suggest" -o "$2" = "explain" ]; then
+    command gh "$@"
+    atrack auto "$*" "Copilot query executed" "gh-copilot" 0 0 >/dev/null 2>&1
+  else
+    command gh "$@"
+  fi
+}
+alias gh="gh_copilot_wrapper"`
+
+	zshAutoInitBlock := `# AgentTrack Auto-Init Hook (Zsh)
+atrack_auto_init() {
+  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
+      atrack init >/dev/null 2>&1
+  fi
+}
+autoload -U add-zsh-hook 2>/dev/null
+add-zsh-hook chpwd atrack_auto_init 2>/dev/null
+atrack_auto_init`
+
+	bashAutoInitBlock := `# AgentTrack Auto-Init Hook (Bash)
+atrack_auto_init() {
+  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
+      atrack init >/dev/null 2>&1
+  fi
+}
+if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
+    export PROMPT_COMMAND="atrack_auto_init; $PROMPT_COMMAND"
+fi
+atrack_auto_init`
+
+	for _, profile := range profiles {
+		data, err := os.ReadFile(profile)
+		if err != nil {
+			continue
+		}
+
+		content := string(data)
+		updated, changedCopilot := removeManagedBlocks(content, copilotBlock)
+		updated, changedZsh := removeManagedBlocks(updated, zshAutoInitBlock)
+		updated, changedBash := removeManagedBlocks(updated, bashAutoInitBlock)
+		if !changedCopilot && !changedZsh && !changedBash {
+			continue
+		}
+
+		if err := os.WriteFile(profile, []byte(updated), 0644); err != nil {
+			fmt.Printf("Warning: could not update %s: %v\n", profile, err)
+			continue
+		}
+		fmt.Printf("Removed AgentTrack hooks from %s\n", profile)
+	}
+}
+
+func removeBinaryCandidates() {
+	paths := map[string]bool{}
+	if execPath, err := os.Executable(); err == nil {
+		paths[execPath] = true
+		if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+			paths[resolved] = true
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		paths[filepath.Join(home, "go", "bin", "atrack")] = true
+		paths[filepath.Join(home, "go", "bin", "atrack.exe")] = true
+	}
+
+	for path := range paths {
+		if path == "" {
+			continue
+		}
+		base := strings.ToLower(filepath.Base(path))
+		if base != "atrack" && base != "atrack.exe" {
+			continue
+		}
+		if err := os.Remove(path); err == nil {
+			fmt.Printf("Removed binary: %s\n", path)
+		} else if !os.IsNotExist(err) {
+			fmt.Printf("Warning: could not remove binary %s: %v\n", path, err)
+		}
+	}
+}
+
+func uninstallApp(skipConfirm bool) {
+	loadConfig()
+	if !confirmAction(fmt.Sprintf("This will remove AgentTrack data in %s and uninstall hooks. Continue? [y/N]: ", appDir), skipConfirm) {
+		fmt.Println("Uninstall cancelled.")
+		return
+	}
+
+	removeInstallHooks()
+	if err := os.RemoveAll(appDir); err != nil {
+		fmt.Printf("Warning: could not remove %s: %v\n", appDir, err)
+	} else {
+		fmt.Printf("Removed data directory: %s\n", appDir)
+	}
+
+	removeBinaryCandidates()
+	fmt.Println("AgentTrack uninstall complete.")
+}
+
 func watchLogs(interval time.Duration) {
 	loadConfig()
 	fmt.Printf(ColorCyan+"👀 Watching for new AgentTrack logs in real-time... (Interval: %v, Press Ctrl+C to stop)\n"+ColorReset, interval)
@@ -1294,6 +1467,12 @@ func Run() {
 
 	case "clear":
 		clearLogs()
+
+	case "reset":
+		resetAppData(hasConfirmFlag(os.Args[2:]))
+
+	case "uninstall":
+		uninstallApp(hasConfirmFlag(os.Args[2:]))
 
 	case "summary":
 		period := "today"
@@ -2115,6 +2294,8 @@ func printFullUsage() {
 	printUsageItem(`atrack export [md|csv|json]`, "Export data to files")
 	printUsageItem(`atrack pricing sync [all|model]`, "Sync model prices from OpenRouter")
 	printUsageItem(`atrack config [show|get|set|reset]`, "Manage application configuration")
+	printUsageItem(`atrack reset [--yes]`, "Delete all logs and reset config to defaults")
+	printUsageItem(`atrack uninstall [--yes]`, "Remove app data, shell hooks, and local atrack binary")
 	printUsageItem(`atrack info`, "Show system paths and info")
 	printUsageItem(`atrack version`, "Show app version")
 	printUsageItem(`atrack clear`, "Wipe all log data")

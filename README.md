@@ -239,6 +239,12 @@ atrack config show
 atrack config set display.max_logs_view 25
 atrack config set pricing.currency THB
 atrack config reset
+
+# Reset / Uninstall
+atrack reset                 # interactive reset (delete logs + reset config)
+atrack reset --yes           # non-interactive reset
+atrack uninstall             # interactive uninstall (remove data/hooks/binary)
+atrack uninstall --yes       # non-interactive uninstall
 ```
 
 ---
