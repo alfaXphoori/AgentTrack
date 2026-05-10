@@ -205,7 +205,11 @@ func watchCopilot() {
 	case "darwin":
 		storagePath = filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "workspaceStorage")
 	case "windows":
-		storagePath = filepath.Join(os.Getenv("APPDATA"), "Code", "User", "workspaceStorage")
+		appData := os.Getenv("APPDATA")
+		if appData == "" {
+			appData = filepath.Join(homeDir, "AppData", "Roaming")
+		}
+		storagePath = filepath.Join(appData, "Code", "User", "workspaceStorage")
 	default: // linux and others
 		storagePath = filepath.Join(homeDir, ".config", "Code", "User", "workspaceStorage")
 	}
