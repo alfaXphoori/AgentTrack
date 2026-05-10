@@ -3,7 +3,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.14.3-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
@@ -27,6 +27,20 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 ---
 
 ## 📦 Installation
+
+<details>
+<summary><b>🛠️ Local Development / Testing (Use current source)</b></summary>
+
+If you are testing the latest local changes on this machine:
+```powershell
+# 1. Install from current folder
+go install ./cmd/atrack
+
+# 2. Setup autostart
+atrack autostart install
+```
+
+</details>
 
 <details>
 <summary><b>🍺 Homebrew (macOS / Linux) — Recommended</b></summary>
@@ -75,12 +89,18 @@ sudo mv atrack /usr/local/bin/
 </details>
 
 <details>
-<summary><b>🪟 Windows — PowerShell One-liner (Recommended)</b></summary>
+<summary><b>🪟 Windows — via Go (Recommended)</b></summary>
 
-```powershell
-go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
-```
-*(Requires [Go](https://go.dev/doc/install) to be installed)*
+1. **Install Go:** [Download and Install Go](https://go.dev/doc/install) (ensure `GOPATH/bin` is in your PATH).
+2. **Install AgentTrack:**
+   ```powershell
+   go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
+   ```
+3. **Enable Background Tracking (Auto-run):**
+   ```powershell
+   atrack autostart install
+   ```
+   *(This sets up a user-level startup entry in the Windows Registry—no Admin rights required!)*
 
 </details>
 

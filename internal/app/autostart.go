@@ -154,6 +154,23 @@ func installAutoStartService() error {
 	if err != nil {
 		return err
 	}
+
+	// Install shell hooks (Auto-Init)
+	installHooks()
+
+	// Prime watchers to ignore existing history on fresh install
+	PrimeWatchers()
+
+	// Start the service in background immediately so logs work without restart
+	executable, _ := serviceExecutablePath()
+	if executable != "" {
+		if runtime.GOOS == "windows" {
+			exec.Command("powershell", "-NoProfile", "-Command", fmt.Sprintf("Start-Process -FilePath '%s' -ArgumentList 'autostart', 'run' -WindowStyle Hidden", executable)).Run()
+		} else {
+			exec.Command(executable, "autostart", "run").Start()
+		}
+	}
+
 	return enableAutoStartFlag()
 }
 
@@ -333,18 +350,13 @@ func installWindowsAutoStartService() error {
 		return err
 	}
 
+	// Use the Registry Run key for user-level autostart (no admin required)
 	taskRun := fmt.Sprintf("\"%s\" autostart run", executable)
-	if err := exec.Command("schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", autoStartServiceLabel, "/TR", taskRun).Run(); err != nil {
-		return err
-	}
-	return nil
+	return exec.Command("reg", "add", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "AgentTrack", "/t", "REG_SZ", "/d", taskRun, "/f").Run()
 }
 
 func uninstallWindowsAutoStartService() error {
-	if err := exec.Command("schtasks", "/Delete", "/F", "/TN", autoStartServiceLabel).Run(); err != nil {
-		return err
-	}
-	return nil
+	return exec.Command("reg", "delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "AgentTrack", "/f").Run()
 }
 
 func printAutoStartHelp() {

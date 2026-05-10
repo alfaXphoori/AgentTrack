@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -953,15 +954,18 @@ func renderLogs(logs []LogEntry) {
 	}
 }
 
-func showLastLog() {
+func showLastLogs(count int) {
 	loadConfig()
 	logs := getLogsFromAllFiles()
 	if len(logs) == 0 {
 		fmt.Println("No logs found.")
 		return
 	}
-	lastLog := []LogEntry{logs[len(logs)-1]}
-	renderLogs(lastLog)
+	if count > len(logs) {
+		count = len(logs)
+	}
+	lastLogs := logs[len(logs)-count:]
+	renderLogs(lastLogs)
 }
 
 func listLogs(dateFilter DateFilter) {
@@ -1107,6 +1111,9 @@ func clearLogs() {
 		os.WriteFile(file, []byte(""), 0644)
 	}
 	fmt.Println("All log files cleared.")
+
+	// Also prime watchers to ignore existing history
+	PrimeWatchers()
 }
 
 func hasConfirmFlag(args []string) bool {
@@ -1165,6 +1172,89 @@ func removeManagedBlocks(content string, block string) (string, bool) {
 	return updated, updated != content
 }
 
+func installHooks() {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return
+	}
+
+	// ---------------------------------------------------------------------------
+	// 1. Zsh / Bash Hooks (macOS/Linux)
+	// ---------------------------------------------------------------------------
+	profiles := []string{
+		filepath.Join(home, ".zshrc"),
+		filepath.Join(home, ".bashrc"),
+		filepath.Join(home, ".bash_profile"),
+		filepath.Join(home, ".profile"),
+	}
+
+	zshAutoInitBlock := "\n# AgentTrack Auto-Init Hook (Zsh)\natrack_auto_init() {\n  if [ -w \".\" ] && [ ! -f \".cursorrules\" ]; then\n      atrack init >/dev/null 2>&1\n  fi\n}\nautoload -U add-zsh-hook 2>/dev/null\nadd-zsh-hook chpwd atrack_auto_init 2>/dev/null\natrack_auto_init"
+	bashAutoInitBlock := "\n# AgentTrack Auto-Init Hook (Bash)\natrack_auto_init() {\n  if [ -w \".\" ] && [ ! -f \".cursorrules\" ]; then\n      atrack init >/dev/null 2>&1\n  fi\n}\nif [[ ! \"$PROMPT_COMMAND\" == *\"atrack_auto_init\"* ]]; then\n    export PROMPT_COMMAND=\"atrack_auto_init; $PROMPT_COMMAND\"\nfi\natrack_auto_init"
+
+	for _, profile := range profiles {
+		if _, err := os.Stat(profile); err != nil {
+			continue
+		}
+		data, _ := os.ReadFile(profile)
+		content := string(data)
+		block := bashAutoInitBlock
+		if strings.HasSuffix(profile, ".zshrc") {
+			block = zshAutoInitBlock
+		}
+
+		if !strings.Contains(content, "atrack_auto_init") {
+			f, _ := os.OpenFile(profile, os.O_APPEND|os.O_WRONLY, 0644)
+			if f != nil {
+				f.WriteString(block)
+				f.Close()
+				fmt.Printf("✅ Added Auto-Init hook to %s\n", profile)
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------------------
+	// 2. PowerShell Hook (Windows)
+	// ---------------------------------------------------------------------------
+	if runtime.GOOS == "windows" {
+		psHook := `
+# AgentTrack Auto-Init Hook (PowerShell)
+function atrack_auto_init {
+    if (Test-Path -Path . -PathType Container) {
+        if (-not (Test-Path -Path ".cursorrules") -and (New-Object System.IO.DirectoryInfo ".").Attributes.HasFlag([System.IO.FileAttributes]::ReadOnly) -eq $false) {
+            atrack init > $null 2>&1
+        }
+    }
+}
+# Hook into prompt to check on every directory change
+if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
+    $old_prompt = $function:prompt
+    function prompt {
+        atrack_auto_init
+        &$old_prompt
+    }
+}
+`
+		// Target both PowerShell 5.1 and PowerShell 7+ profile paths
+		psProfiles := []string{
+			filepath.Join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
+			filepath.Join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"),
+		}
+
+		for _, profilePath := range psProfiles {
+			os.MkdirAll(filepath.Dir(profilePath), 0755)
+			data, _ := os.ReadFile(profilePath)
+			if !strings.Contains(string(data), "atrack_auto_init") {
+				f, _ := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if f != nil {
+					f.WriteString(psHook)
+					f.Close()
+					fmt.Printf("✅ Added Auto-Init hook to PowerShell profile: %s\n", profilePath)
+				}
+			}
+		}
+	}
+}
+
 func removeInstallHooks() {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -1181,6 +1271,17 @@ func removeInstallHooks() {
 		filepath.Join(home, ".bashrc"),
 		filepath.Join(home, ".bash_profile"),
 		filepath.Join(home, ".profile"),
+	}
+
+	// PowerShell Profile cleanup
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("powershell", "-NoProfile", "-Command", "$PROFILE").Output()
+		if err == nil {
+			profilePath := strings.TrimSpace(string(out))
+			if profilePath != "" {
+				profiles = append(profiles, profilePath)
+			}
+		}
 	}
 
 	copilotBlock := `# AgentTrack GitHub Copilot Wrapper
@@ -1215,6 +1316,24 @@ if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
 fi
 atrack_auto_init`
 
+	psAutoInitBlock := `# AgentTrack Auto-Init Hook (PowerShell)
+function atrack_auto_init {
+    if (Test-Path -Path . -PathType Container) {
+        if (-not (Test-Path -Path ".cursorrules") -and (New-Object System.IO.DirectoryInfo ".").Attributes.HasFlag([System.IO.FileAttributes]::ReadOnly) -eq $false) {
+            atrack init > $null 2>&1
+        }
+    }
+}
+# Hook into prompt to check on every directory change
+if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
+    $old_prompt = $function:prompt
+    function prompt {
+        atrack_auto_init
+        &$old_prompt
+    }
+}
+`
+
 	for _, profile := range profiles {
 		data, err := os.ReadFile(profile)
 		if err != nil {
@@ -1225,7 +1344,8 @@ atrack_auto_init`
 		updated, changedCopilot := removeManagedBlocks(content, copilotBlock)
 		updated, changedZsh := removeManagedBlocks(updated, zshAutoInitBlock)
 		updated, changedBash := removeManagedBlocks(updated, bashAutoInitBlock)
-		if !changedCopilot && !changedZsh && !changedBash {
+		updated, changedPs := removeManagedBlocks(updated, psAutoInitBlock)
+		if !changedCopilot && !changedZsh && !changedBash && !changedPs {
 			continue
 		}
 
@@ -1302,6 +1422,12 @@ func updateApp() {
 		fmt.Println("  " + ColorCyan + "Binary Release:" + ColorReset + "       Download the latest version from https://github.com/alfaXphoori/AgentTrack/releases")
 	} else {
 		fmt.Println("\n✅ " + ColorGreen + "AgentTrack updated successfully!" + ColorReset)
+		fmt.Println("🔧 Refreshing background services...")
+		if err := installAutoStartService(); err != nil {
+			fmt.Printf("⚠️  Warning: could not refresh autostart: %v\n", err)
+		} else {
+			fmt.Println("✨ Background services refreshed and running.")
+		}
 	}
 }
 
@@ -1501,7 +1627,13 @@ func Run() {
 
 		switch strings.ToLower(remaining[0]) {
 		case "last":
-			showLastLog()
+			count := 1
+			if len(remaining) > 1 {
+				if c, err := strconv.Atoi(remaining[1]); err == nil {
+					count = c
+				}
+			}
+			showLastLogs(count)
 			return
 		case "model":
 			if len(remaining) < 2 {
@@ -1616,6 +1748,9 @@ func Run() {
 
 	case "init":
 		initRules()
+
+	case "prime":
+		PrimeWatchers()
 
 	case "internal-watch-copilot":
 		watchCopilot()
@@ -2425,12 +2560,6 @@ func printFullUsage() {
 	printUsageItem(`atrack autostart [install|uninstall|run]`, "Install or run the auto-start service")
 	printUsageItem(`atrack reset [--yes]`, "Delete all logs and reset config to defaults")
 	printUsageItem(`atrack uninstall [--yes]`, "Remove app data, shell hooks, and local atrack binary")
-	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")
-	printUsageItem(`atrack info`, "Show system paths and info")
-	printUsageItem(`atrack version`, "Show app version")
-	printUsageItem(`atrack clear`, "Wipe all log data")
-	fmt.Println()
-}
 	printUsageItem(`atrack update`, "Attempt to self-update or show update instructions")
 	printUsageItem(`atrack info`, "Show system paths and info")
 	printUsageItem(`atrack version`, "Show app version")

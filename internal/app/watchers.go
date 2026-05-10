@@ -338,6 +338,166 @@ func parseIso(ts string) time.Time {
 	return t
 }
 
+func PrimeWatchers() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	// 1. Prime Gemini
+	stateDir := filepath.Join(home, ".atrack", "watch_state")
+	os.MkdirAll(stateDir, 0755)
+
+	geminiTmp := filepath.Join(home, ".gemini", "tmp")
+	entries, _ := os.ReadDir(geminiTmp)
+	for _, d := range entries {
+		if !d.IsDir() {
+			continue
+		}
+		chatsDir := filepath.Join(geminiTmp, d.Name(), "chats")
+		sessions, _ := filepath.Glob(filepath.Join(chatsDir, "session-*.jsonl"))
+		for _, s := range sessions {
+			pairs := countGeminiPairs(s)
+			stateFile := filepath.Join(stateDir, filepath.Base(s)+".logged")
+			os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", pairs)), 0644)
+		}
+	}
+
+	// 2. Prime Copilot
+	var storagePath string
+	switch runtime.GOOS {
+	case "darwin":
+		storagePath = filepath.Join(home, "Library", "Application Support", "Code", "User", "workspaceStorage")
+	case "windows":
+		appData := os.Getenv("APPDATA")
+		if appData == "" {
+			appData = filepath.Join(home, "AppData", "Roaming")
+		}
+		storagePath = filepath.Join(appData, "Code", "User", "workspaceStorage")
+	default:
+		storagePath = filepath.Join(home, ".config", "Code", "User", "workspaceStorage")
+	}
+
+	copilotStateDir := filepath.Join(home, ".atrack", "vscode_copilot_state")
+	os.MkdirAll(copilotStateDir, 0755)
+
+	matches, _ := filepath.Glob(filepath.Join(storagePath, "*", "chatSessions", "*.jsonl"))
+	for _, f := range matches {
+		sessionID, requests := scanCopilotFile(f)
+		if sessionID != "" {
+			saveCopilotLoggedCount(copilotStateDir, sessionID, len(requests))
+		}
+	}
+
+	fmt.Println("✅ All watcher states primed (ignoring existing history).")
+}
+
+func scanCopilotFile(filePath string) (string, []map[string]interface{}) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", nil
+	}
+	defer file.Close()
+
+	var sessionID string
+	var requests []map[string]interface{}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		var data map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &data); err != nil {
+			continue
+		}
+		kind, _ := data["kind"].(float64)
+		if kind == 0 {
+			if v, ok := data["v"].(map[string]interface{}); ok {
+				if sessionID == "" {
+					sessionID, _ = v["sessionId"].(string)
+				}
+				if reqs, ok := v["requests"].([]interface{}); ok {
+					for _, r := range reqs {
+						if reqMap, ok := r.(map[string]interface{}); ok {
+							requests = append(requests, reqMap)
+						}
+					}
+				}
+			}
+		}
+	}
+	return sessionID, requests
+}
+
+func countGeminiPairs(filePath string) int {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0
+	}
+	defer file.Close()
+
+	var turns []geminiTurn
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		var d map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &d); err != nil {
+			continue
+		}
+		typ, _ := d["type"].(string)
+		if typ == "user" || typ == "gemini" {
+			text := ""
+			if contentStr, ok := d["content"].(string); ok {
+				text = contentStr
+			} else if contentArr, ok := d["content"].([]interface{}); ok {
+				for _, c := range contentArr {
+					if cDict, ok := c.(map[string]interface{}); ok {
+						if t, ok := cDict["text"].(string); ok {
+							text += t
+						}
+					}
+				}
+			}
+			var tools []string
+			if toolCalls, ok := d["toolCalls"].([]interface{}); ok {
+				for _, call := range toolCalls {
+					if c, ok := call.(map[string]interface{}); ok {
+						if name, ok := c["name"].(string); ok {
+							tools = append(tools, name)
+						}
+					}
+				}
+			}
+			if strings.TrimSpace(text) != "" || len(tools) > 0 {
+				turns = append(turns, geminiTurn{Type: typ, Text: text, Tools: tools})
+			}
+		}
+	}
+
+	pairs := 0
+	i := 0
+	for i < len(turns) {
+		if turns[i].Type == "user" {
+			j := i + 1
+			foundGemini := false
+			for j < len(turns) && turns[j].Type != "user" {
+				if turns[j].Type == "gemini" {
+					foundGemini = true
+				}
+				j++
+			}
+			if foundGemini {
+				pairs++
+				i = j
+			} else {
+				i++
+			}
+		} else {
+			i++
+		}
+	}
+	return pairs
+}
+
 func processGeminiSession(filePath, stateDir string) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -421,24 +581,66 @@ func processGeminiSession(filePath, stateDir string) {
 
 	for i < len(turns) {
 		if turns[i].Type == "user" {
-			if i+1 < len(turns) && turns[i+1].Type == "gemini" {
-				model := turns[i+1].Model
+			qText := turns[i].Text
+			qTs := turns[i].Ts
+			
+			var aText strings.Builder
+			var aTools []string
+			var aTs time.Time
+			var aModel string
+
+			// Look ahead for all Gemini turns until the next User turn
+			j := i + 1
+			for j < len(turns) && turns[j].Type != "user" {
+				if turns[j].Type == "gemini" {
+					if turns[j].Text != "" {
+						if aText.Len() > 0 {
+							aText.WriteString("\n")
+						}
+						aText.WriteString(turns[j].Text)
+					}
+					aTools = append(aTools, turns[j].Tools...)
+					if aTs.IsZero() {
+						aTs = turns[j].Ts
+					}
+					if turns[j].Model != "" {
+						aModel = turns[j].Model
+					}
+				}
+				j++
+			}
+
+			// Only log if we found at least one Gemini turn
+			if aTs.IsZero() == false || aText.Len() > 0 || len(aTools) > 0 {
+				// Optimization: If this is the very last pair in an active session 
+				// and there's no text answer yet, skip it for now and wait for the AI to finish.
+				if j == len(turns) && aText.Len() == 0 {
+					if info, err := os.Stat(filePath); err == nil {
+						if time.Since(info.ModTime()) < 15*time.Second {
+							break // Exit the pair loop, don't log this incomplete one yet
+						}
+					}
+				}
+
+				model := aModel
 				if model == "" {
 					model = lastModel
 				}
 				var duration float64
-				if !turns[i].Ts.IsZero() && !turns[i+1].Ts.IsZero() {
-					duration = turns[i+1].Ts.Sub(turns[i].Ts).Seconds()
+				if !qTs.IsZero() && !aTs.IsZero() {
+					duration = aTs.Sub(qTs).Seconds()
 				}
 				pairs = append(pairs, pair{
-					Question: turns[i].Text,
-					Answer:   turns[i+1].Text,
+					Question: qText,
+					Answer:   aText.String(),
 					Model:    model,
 					Duration: duration,
-					Tools:    turns[i+1].Tools,
+					Tools:    aTools,
 				})
-				lastModel = model
-				i += 2
+				if aModel != "" {
+					lastModel = aModel
+				}
+				i = j // Advance to the next User turn or end
 			} else {
 				i++
 			}
