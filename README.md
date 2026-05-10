@@ -17,16 +17,12 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ---
 
-## ✨ What's New in v0.14.2
+## ✨ What's New in v0.1.0
 
 | Feature | Description |
 |:---|:---|
-| ♻️ **Reset / Uninstall** | Added `atrack reset` and `atrack uninstall` with optional `--yes` for non-interactive cleanup. |
-| 🧱 **Log Storage Hardening** | Switched to append-friendly JSONL handling with file locking and safer large-entry reads. |
-| 📺 **Dashboard Refresh** | Overview, Stats, Trends, and Cost tabs now refresh live without re-entering the dashboard app loop. |
-| 🧪 **Test Cleanup** | Test runs now use a temporary `ATRACK_HOME`, avoiding generated artifacts inside the source tree. |
-| 🪟 **Windows Packaging** | Refined Windows installation paths around PowerShell, source build, and manual binary install. |
-| 📘 **Docs / UX** | Updated install and command docs to reflect reset, uninstall, and current installation options. |
+| 🚀 **Initial Release** | First stable version of AgentTrack with multi-agent support and TUI dashboard. |
+| 🪟 **Windows Optimized** | Native support for Windows paths and VS Code log detection. |
 
 ---
 
@@ -279,6 +275,21 @@ Run `atrack init` in any project to auto-generate rule files for all supported a
 | **Roo Code** | [integrations/roo-code.md](integrations/roo-code.md) |
 | **Windsurf** | [integrations/windsurf.md](integrations/windsurf.md) |
 | **Qwen Code** | [integrations/qwen-code.md](integrations/qwen-code.md) |
+| **Codex CLI** | [integrations/codex.md](integrations/codex.md) |
+| **Shell-GPT** | [integrations/sgpt.md](integrations/sgpt.md) |
+| **Open Interpreter** | [integrations/open-interpreter.md](integrations/open-interpreter.md) |
+| **Continue.dev** | [integrations/continue.md](integrations/continue.md) |
+
+---
+
+## 📄 License
+
+This project is licensed under the **Apache License 2.0**.  
+See the [LICENSE](LICENSE) file for the full license text.
+
+Built with ❤️ by [alfaXphoori](https://github.com/alfaXphoori) and the open-source community.
+
+wen-code.md) |
 | **Codex CLI** | [integrations/codex.md](integrations/codex.md) |
 | **Shell-GPT** | [integrations/sgpt.md](integrations/sgpt.md) |
 | **Open Interpreter** | [integrations/open-interpreter.md](integrations/open-interpreter.md) |
