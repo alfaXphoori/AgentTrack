@@ -1395,6 +1395,11 @@ func uninstallApp(skipConfirm bool) {
 		return
 	}
 
+	// 1. Terminate running processes to unlock binary (Windows specific)
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/F", "/IM", "atrack.exe").Run()
+	}
+
 	removeInstallHooks()
 	if err := os.RemoveAll(appDir); err != nil {
 		fmt.Printf("Warning: could not remove %s: %v\n", appDir, err)
@@ -1408,6 +1413,12 @@ func uninstallApp(skipConfirm bool) {
 
 func updateApp() {
 	fmt.Println("🔄 Updating AgentTrack...")
+
+	// Terminate running processes to unlock binary (Windows specific)
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/F", "/IM", "atrack.exe").Run()
+	}
+
 	fmt.Println("Attempting to update via 'go install'...")
 	
 	cmd := exec.Command("go", "install", "github.com/alfaXphoori/AgentTrack/cmd/atrack@latest")
