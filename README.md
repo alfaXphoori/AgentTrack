@@ -4,7 +4,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.13.6-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.13.7-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#installation)
@@ -18,16 +18,16 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ---
 
-## ✨ What's New in v0.13.6
+## ✨ What's New in v0.13.7
 
 | Feature | Description |
 |:---|:---|
-| 📈 **Dashboard: Trends** | 30-day daily activity bar chart — switch between Logs / Tokens / Cost. |
-| 💰 **Dashboard: Cost** | Today / week / month / all-time cost summary + per-model breakdown. |
-| 📊 **Dashboard: Stats** | Interactive ASCII bar chart per model with metric selector. |
-| 🔍 **Dashboard: Logs** | Filter by Keyword / Model / Category + **Live Watch** (auto-refresh every 2s). |
-| ⚙️ **Dashboard: Settings** | Export buttons (MD / CSV / JSON) at the top of the settings tab. |
-| 🏗️ **Architecture** | Refactored to standard Go project layout for better maintainability. |
+| ♻️ **Reset / Uninstall** | Added `atrack reset` and `atrack uninstall` with optional `--yes` for non-interactive cleanup. |
+| 🧱 **Log Storage Hardening** | Switched to append-friendly JSONL handling with file locking and safer large-entry reads. |
+| 📺 **Dashboard Refresh** | Overview, Stats, Trends, and Cost tabs now refresh live without re-entering the dashboard app loop. |
+| 🧪 **Test Cleanup** | Test runs now use a temporary `ATRACK_HOME`, avoiding generated artifacts inside the source tree. |
+| 🪟 **Windows Packaging** | Added Scoop packaging support alongside the existing release pipeline. |
+| 📘 **Docs / UX** | Updated install and command docs to reflect reset, uninstall, and current packaging options. |
 
 ---
 
