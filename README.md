@@ -1,7 +1,5 @@
 <div align="center">
-<img src="assets/logo.png" alt="AgentTrack Logo" width="420" />
-
-# 🤖 AgentTrack
+<img src="assets/logo.png" alt="AgentTrack Logo" width="ุ640" />
 
 ### ⚡ AI Activity Tracker for the Terminal
 
