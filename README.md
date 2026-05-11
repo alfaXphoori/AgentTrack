@@ -49,18 +49,6 @@ atrack autostart install
 </details>
 
 <details>
-<summary><b>🍺 Homebrew (macOS / Linux) — Recommended</b></summary>
-
-```bash
-brew tap alfaXphoori/agenttrack
-brew install atrack
-```
-
-> Note: This currently requires a published tap repository at `alfaXphoori/homebrew-agenttrack`.
-
-</details>
-
-<details>
 <summary><b>💻 macOS / Linux — Build from Source</b></summary>
 
 ```bash
