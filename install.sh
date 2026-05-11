@@ -45,66 +45,9 @@ if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     fi
 fi
 
-if [ -n "$PROFILE_FILE" ]; then
-    # 3. Add GitHub Copilot Wrapper
-    echo "🔧 Configuring GitHub Copilot auto-log wrapper in $PROFILE_FILE..."
-    if ! grep -q "gh_copilot_wrapper" "$PROFILE_FILE" 2>/dev/null; then
-      cat << 'EOF' >> "$PROFILE_FILE"
-
-# AgentTrack GitHub Copilot Wrapper
-gh_copilot_wrapper() {
-  if [ "$1" = "copilot" ] && [ "$2" = "suggest" -o "$2" = "explain" ]; then
-    command gh "$@"
-    atrack auto "$*" "Copilot query executed" "gh-copilot" 0 0 >/dev/null 2>&1
-  else
-    command gh "$@"
-  fi
-}
-alias gh="gh_copilot_wrapper"
-EOF
-      echo "  ✅ Copilot wrapper added."
-    else
-      echo "  ⚡ Copilot wrapper already configured."
-    fi
-
-    # 4. Add Auto-Init Hook
-    echo "🪄 Configuring fully automatic background setup for AI agents..."
-    if ! grep -q "atrack_auto_init" "$PROFILE_FILE" 2>/dev/null; then
-        if [[ "$SHELL" == *"zsh"* ]]; then
-            cat << 'EOF' >> "$PROFILE_FILE"
-
-# AgentTrack Auto-Init Hook (Zsh)
-atrack_auto_init() {
-  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
-      atrack init >/dev/null 2>&1
-  fi
-}
-autoload -U add-zsh-hook 2>/dev/null
-add-zsh-hook chpwd atrack_auto_init 2>/dev/null
-atrack_auto_init
-EOF
-        else
-            cat << 'EOF' >> "$PROFILE_FILE"
-
-# AgentTrack Auto-Init Hook (Bash)
-atrack_auto_init() {
-  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
-      atrack init >/dev/null 2>&1
-  fi
-}
-if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
-    export PROMPT_COMMAND="atrack_auto_init; $PROMPT_COMMAND"
-fi
-atrack_auto_init
-EOF
-        fi
-        echo "  ✅ Auto-Init hook added."
-    else
-        echo "  ⚡ Auto-Init hook already configured."
-    fi
-else
-    echo "⚠️ Could not determine shell profile file. Skipping hooks."
-fi
+# 3. Add GitHub Copilot Wrapper & Auto-Init Hook via internal command
+echo "🪄 Configuring shell hooks (Auto-Log, Auto-Init)..."
+atrack autostart install
 
 echo ""
 echo "🎉 AgentTrack Installation Complete!"

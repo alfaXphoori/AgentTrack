@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/gofrs/flock"
 )
-
 type TokenEstimationConfig struct {
 	Enabled       bool    `json:"enabled"`
 	CharsPerToken float64 `json:"chars_per_token"`
@@ -243,11 +243,46 @@ func appendLogToFile(path string, entry LogEntry) error {
 	}
 	defer fileLock.Unlock()
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
+	// -------------------------------------------------------------------------
+	// Deduplication Logic: Check last entry to prevent double-saving
+	// -------------------------------------------------------------------------
+	info, err := f.Stat()
+	if err == nil && info.Size() > 0 {
+		// Read last 4KB to find the last line
+		bufSize := int64(4096)
+		if info.Size() < bufSize {
+			bufSize = info.Size()
+		}
+		buf := make([]byte, bufSize)
+		_, err := f.ReadAt(buf, info.Size()-bufSize)
+		if err == nil {
+			lines := strings.Split(strings.TrimSpace(string(buf)), "\n")
+			if len(lines) > 0 {
+				lastLine := lines[len(lines)-1]
+				var lastEntry LogEntry
+				if err := json.Unmarshal([]byte(lastLine), &lastEntry); err == nil {
+					// 1. Check for duplicate session activity (Watchers)
+					if entry.SessionID != "" && entry.SessionID == lastEntry.SessionID {
+						if entry.Question == lastEntry.Question && entry.Answer == lastEntry.Answer {
+							return nil // Skip duplicate
+						}
+					}
+					// 2. Check for duplicate manual logs within a very short window (1s)
+					if entry.SessionID == "" && entry.Message == lastEntry.Message && entry.Category == lastEntry.Category {
+						if entry.Timestamp == lastEntry.Timestamp {
+							return nil // Skip duplicate
+						}
+					}
+				}
+			}
+		}
+	}
 
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -936,13 +971,18 @@ func renderLogs(logs []LogEntry) {
 		timeLabel := shortLogTime(log.Timestamp)
 		categoryLabel := shortCategory(category)
 
-		if category == "AutoLog" && log.Question != "" && log.Answer != "" {
+		if category == "AutoLog" && log.Question != "" {
 			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%s"+ColorReset+" | "+ColorPurple+"%-8s"+ColorReset+" | %s\n", displayID, timeLabel, categoryLabel, metadata)
 			if tagsLine != "" {
 				fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", tagsLine)
 			}
 			fmt.Printf("%-5s | %-5s | %-8s | 👤 "+ColorBold+"%s"+ColorReset+"\n", "", "", "", log.Question)
-			fmt.Printf("%-5s | %-5s | %-8s | 🤖 "+ColorBold+"%s"+ColorReset+"\n", "", "", "", log.Answer)
+			
+			ans := log.Answer
+			if ans == "" {
+				ans = ColorGray + "(No text response)" + ColorReset
+			}
+			fmt.Printf("%-5s | %-5s | %-8s | 🤖 "+ColorBold+"%s"+ColorReset+"\n", "", "", "", ans)
 		} else {
 			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%s"+ColorReset+" | "+ColorPurple+"%-8s"+ColorReset+" | 📝 %s\n", displayID, timeLabel, categoryLabel, log.Message)
 			fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", metadata)
@@ -1178,6 +1218,11 @@ func installHooks() {
 		return
 	}
 
+	executable, _ := serviceExecutablePath()
+	if executable == "" {
+		executable = "atrack"
+	}
+
 	// ---------------------------------------------------------------------------
 	// 1. Zsh / Bash Hooks (macOS/Linux)
 	// ---------------------------------------------------------------------------
@@ -1188,8 +1233,43 @@ func installHooks() {
 		filepath.Join(home, ".profile"),
 	}
 
-	zshAutoInitBlock := "\n# AgentTrack Auto-Init Hook (Zsh)\natrack_auto_init() {\n  if [ -w \".\" ] && [ ! -f \".cursorrules\" ]; then\n      atrack init >/dev/null 2>&1\n  fi\n}\nautoload -U add-zsh-hook 2>/dev/null\nadd-zsh-hook chpwd atrack_auto_init 2>/dev/null\natrack_auto_init"
-	bashAutoInitBlock := "\n# AgentTrack Auto-Init Hook (Bash)\natrack_auto_init() {\n  if [ -w \".\" ] && [ ! -f \".cursorrules\" ]; then\n      atrack init >/dev/null 2>&1\n  fi\n}\nif [[ ! \"$PROMPT_COMMAND\" == *\"atrack_auto_init\"* ]]; then\n    export PROMPT_COMMAND=\"atrack_auto_init; $PROMPT_COMMAND\"\nfi\natrack_auto_init"
+	fullHookBlock := fmt.Sprintf(`
+# >>> AgentTrack Shell Hooks >>>
+unalias gh 2>/dev/null
+unalias copilot 2>/dev/null
+
+gh() {
+  if [ "$1" = "copilot" ]; then
+    command gh "$@"
+    local res=$?
+    "%s" auto "gh $*" "Copilot interaction" "gh-copilot" 0 0 >/dev/null 2>&1
+    return $res
+  fi
+  command gh "$@"
+}
+
+copilot() {
+  command copilot "$@"
+  local res=$?
+  "%s" auto "copilot $*" "Copilot CLI interaction" "copilot-cli" 0 0 >/dev/null 2>&1
+  return $res
+}
+
+atrack_auto_init() {
+  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
+      "%s" init >/dev/null 2>&1
+  fi
+}
+if [[ -n "$ZSH_VERSION" ]]; then
+  autoload -U add-zsh-hook 2>/dev/null
+  add-zsh-hook chpwd atrack_auto_init 2>/dev/null
+elif [[ -n "$BASH_VERSION" ]]; then
+  if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
+      export PROMPT_COMMAND="atrack_auto_init; $PROMPT_COMMAND"
+  fi
+fi
+atrack_auto_init
+# <<< AgentTrack Shell Hooks <<<`, executable, executable, executable)
 
 	for _, profile := range profiles {
 		if _, err := os.Stat(profile); err != nil {
@@ -1197,18 +1277,20 @@ func installHooks() {
 		}
 		data, _ := os.ReadFile(profile)
 		content := string(data)
-		block := bashAutoInitBlock
-		if strings.HasSuffix(profile, ".zshrc") {
-			block = zshAutoInitBlock
+
+		// Regex to find and replace existing AgentTrack block if any
+		re := regexp.MustCompile("(?s)\n*# >>> AgentTrack Shell Hooks >>>.*?# <<< AgentTrack Shell Hooks <<<(\n|$)")
+		
+		var updated string
+		if re.MatchString(content) {
+			updated = re.ReplaceAllLiteralString(content, "\n"+fullHookBlock)
+		} else {
+			updated = content + "\n" + fullHookBlock
 		}
 
-		if !strings.Contains(content, "atrack_auto_init") {
-			f, _ := os.OpenFile(profile, os.O_APPEND|os.O_WRONLY, 0644)
-			if f != nil {
-				f.WriteString(block)
-				f.Close()
-				fmt.Printf("✅ Added Auto-Init hook to %s\n", profile)
-			}
+		if updated != content {
+			os.WriteFile(profile, []byte(updated), 0644)
+			fmt.Printf("✅ Updated hooks in %s\n", profile)
 		}
 	}
 
@@ -1216,12 +1298,12 @@ func installHooks() {
 	// 2. PowerShell Hook (Windows)
 	// ---------------------------------------------------------------------------
 	if runtime.GOOS == "windows" {
-		psHook := `
+		psHook := fmt.Sprintf(`
 # AgentTrack Auto-Init Hook (PowerShell)
 function atrack_auto_init {
     if (Test-Path -Path . -PathType Container) {
         if (-not (Test-Path -Path ".cursorrules") -and (New-Object System.IO.DirectoryInfo ".").Attributes.HasFlag([System.IO.FileAttributes]::ReadOnly) -eq $false) {
-            atrack init > $null 2>&1
+            & "%s" init > $null 2>&1
         }
     }
 }
@@ -1233,7 +1315,7 @@ if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
         &$old_prompt
     }
 }
-`
+`, executable)
 		// Target both PowerShell 5.1 and PowerShell 7+ profile paths
 		psProfiles := []string{
 			filepath.Join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
@@ -1284,55 +1366,8 @@ func removeInstallHooks() {
 		}
 	}
 
-	copilotBlock := `# AgentTrack GitHub Copilot Wrapper
-gh_copilot_wrapper() {
-  if [ "$1" = "copilot" ] && [ "$2" = "suggest" -o "$2" = "explain" ]; then
-    command gh "$@"
-    atrack auto "$*" "Copilot query executed" "gh-copilot" 0 0 >/dev/null 2>&1
-  else
-    command gh "$@"
-  fi
-}
-alias gh="gh_copilot_wrapper"`
-
-	zshAutoInitBlock := `# AgentTrack Auto-Init Hook (Zsh)
-atrack_auto_init() {
-  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
-      atrack init >/dev/null 2>&1
-  fi
-}
-autoload -U add-zsh-hook 2>/dev/null
-add-zsh-hook chpwd atrack_auto_init 2>/dev/null
-atrack_auto_init`
-
-	bashAutoInitBlock := `# AgentTrack Auto-Init Hook (Bash)
-atrack_auto_init() {
-  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
-      atrack init >/dev/null 2>&1
-  fi
-}
-if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
-    export PROMPT_COMMAND="atrack_auto_init; $PROMPT_COMMAND"
-fi
-atrack_auto_init`
-
-	psAutoInitBlock := `# AgentTrack Auto-Init Hook (PowerShell)
-function atrack_auto_init {
-    if (Test-Path -Path . -PathType Container) {
-        if (-not (Test-Path -Path ".cursorrules") -and (New-Object System.IO.DirectoryInfo ".").Attributes.HasFlag([System.IO.FileAttributes]::ReadOnly) -eq $false) {
-            atrack init > $null 2>&1
-        }
-    }
-}
-# Hook into prompt to check on every directory change
-if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
-    $old_prompt = $function:prompt
-    function prompt {
-        atrack_auto_init
-        &$old_prompt
-    }
-}
-`
+	// Regex to find and remove the AgentTrack hook block
+	re := regexp.MustCompile("(?s)\n*# >>> AgentTrack Shell Hooks >>>.*?# <<< AgentTrack Shell Hooks <<<(\n|$)")
 
 	for _, profile := range profiles {
 		data, err := os.ReadFile(profile)
@@ -1341,19 +1376,15 @@ if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
 		}
 
 		content := string(data)
-		updated, changedCopilot := removeManagedBlocks(content, copilotBlock)
-		updated, changedZsh := removeManagedBlocks(updated, zshAutoInitBlock)
-		updated, changedBash := removeManagedBlocks(updated, bashAutoInitBlock)
-		updated, changedPs := removeManagedBlocks(updated, psAutoInitBlock)
-		if !changedCopilot && !changedZsh && !changedBash && !changedPs {
-			continue
+		updated := re.ReplaceAllLiteralString(content, "\n")
+		
+		if updated != content {
+			if err := os.WriteFile(profile, []byte(updated), 0644); err != nil {
+				fmt.Printf("Warning: could not update %s: %v\n", profile, err)
+				continue
+			}
+			fmt.Printf("Removed AgentTrack hooks from %s\n", profile)
 		}
-
-		if err := os.WriteFile(profile, []byte(updated), 0644); err != nil {
-			fmt.Printf("Warning: could not update %s: %v\n", profile, err)
-			continue
-		}
-		fmt.Printf("Removed AgentTrack hooks from %s\n", profile)
 	}
 }
 

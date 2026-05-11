@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 // ---------------------------------------------------------------------------
@@ -128,6 +130,18 @@ func processCopilotFile(filePath, stateDir string) {
 	}
 
 	loggedCount := getCopilotLoggedCount(stateDir, sessionID)
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		// First time seeing this session file!
+		// If the file is old (modified > 1 min ago), ignore its history.
+		if info, err := os.Stat(filePath); err == nil {
+			if time.Since(info.ModTime()) > 1*time.Minute {
+				saveCopilotLoggedCount(stateDir, sessionID, len(requests))
+				return
+			}
+		}
+	}
+
 	if len(requests) <= loggedCount {
 		return
 	}
@@ -197,6 +211,14 @@ func processCopilotFile(filePath, stateDir string) {
 }
 
 func watchCopilot() {
+	lockPath := filepath.Join(getAppDir(), "copilot_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
 	fmt.Println("🔍 Starting VS Code Copilot Watcher (Go Native)...")
 	homeDir, _ := os.UserHomeDir()
 
@@ -418,7 +440,37 @@ func scanCopilotFile(filePath string) (string, []map[string]interface{}) {
 				if reqs, ok := v["requests"].([]interface{}); ok {
 					for _, r := range reqs {
 						if reqMap, ok := r.(map[string]interface{}); ok {
-							requests = append(requests, reqMap)
+							reqID := reqMap["requestId"]
+							found := false
+							for _, existing := range requests {
+								if existing["requestId"] == reqID {
+									found = true
+									break
+								}
+							}
+							if !found {
+								requests = append(requests, reqMap)
+							}
+						}
+					}
+				}
+			}
+		} else if kind == 2 {
+			if v, ok := data["v"].([]interface{}); ok {
+				if k, ok := data["k"].([]interface{}); ok && len(k) == 1 && k[0] == "requests" {
+					for _, r := range v {
+						if reqMap, ok := r.(map[string]interface{}); ok {
+							reqID := reqMap["requestId"]
+							found := false
+							for _, existing := range requests {
+								if existing["requestId"] == reqID {
+									found = true
+									break
+								}
+							}
+							if !found {
+								requests = append(requests, reqMap)
+							}
 						}
 					}
 				}
@@ -509,6 +561,17 @@ func processGeminiSession(filePath, stateDir string) {
 	loggedPairs := 0
 	if data, err := os.ReadFile(stateFile); err == nil {
 		fmt.Sscanf(string(data), "%d", &loggedPairs)
+	} else if os.IsNotExist(err) {
+		// First time seeing this session file!
+		// If the file is old (modified > 1 min ago), ignore its history.
+		if info, err := os.Stat(filePath); err == nil {
+			if time.Since(info.ModTime()) > 1*time.Minute {
+				// We need to count current pairs first to know what to ignore
+				currentPairs := countGeminiPairs(filePath)
+				os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", currentPairs)), 0644)
+				return
+			}
+		}
 	}
 
 	var turns []geminiTurn
@@ -661,12 +724,17 @@ func processGeminiSession(filePath, stateDir string) {
 		ti := fmt.Sprintf("%d", max(1, len(p.Question)/4))
 		to := fmt.Sprintf("%d", max(1, len(p.Answer)/4))
 
-		summary := p.Answer
+		summary := strings.TrimSpace(p.Answer)
 		if lines := strings.Split(summary, "\n"); len(lines) > 0 {
-			summary = lines[0]
+			for _, line := range lines {
+				if trimmed := strings.TrimSpace(line); trimmed != "" {
+					summary = trimmed
+					break
+				}
+			}
 		}
-		if len(summary) > 80 {
-			summary = summary[:80]
+		if len(summary) > 150 {
+			summary = summary[:150]
 		}
 
 		cmd := exec.Command(atrackBin, "auto", p.Question, summary, p.Model, ti, to, dur, sessionID, "success", toolsStr, "gemini-cli")
@@ -688,6 +756,14 @@ func processGeminiSession(filePath, stateDir string) {
 }
 
 func watchGemini() {
+	lockPath := filepath.Join(getAppDir(), "gemini_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
 	fmt.Println("🔍 AgentTrack Gemini Watcher started (Go Native)")
 	homeDir, _ := os.UserHomeDir()
 	geminiTmp := filepath.Join(homeDir, ".gemini", "tmp")

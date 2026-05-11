@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 const autoStartServiceLabel = "com.agenttrack.watcher"
@@ -112,6 +114,15 @@ func (m *autoStartManager) stopAll() {
 }
 
 func runAutoStartService() {
+	lockPath := filepath.Join(getAppDir(), "service.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		fmt.Println("AgentTrack service is already running.")
+		return
+	}
+	defer fileLock.Unlock()
+
 	fmt.Println("🔍 AgentTrack auto-run service started")
 	manager := newAutoStartManager()
 
@@ -140,6 +151,10 @@ func disableAutoStartFlag() error {
 }
 
 func installAutoStartService() error {
+	// Prime watchers to ignore existing history on fresh install
+	// This MUST be done before starting the service to avoid race conditions
+	PrimeWatchers()
+
 	var err error
 	switch runtime.GOOS {
 	case "darwin":
@@ -157,9 +172,6 @@ func installAutoStartService() error {
 
 	// Install shell hooks (Auto-Init)
 	installHooks()
-
-	// Prime watchers to ignore existing history on fresh install
-	PrimeWatchers()
 
 	// Start the service in background immediately so logs work without restart
 	executable, _ := serviceExecutablePath()
