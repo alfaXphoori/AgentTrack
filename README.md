@@ -61,7 +61,7 @@ go install ./cmd/atrack
 </details>
 
 <details>
-<summary><b>🐹 macOS / Linux — via Go</b></summary>
+<summary><b>🐹 macOS / Linux — via Go (Recommended) </b></summary>
 
 ```bash
 go install github.com/alfaXphoori/AgentTrack/cmd/atrack@latest
