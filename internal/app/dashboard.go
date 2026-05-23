@@ -49,6 +49,7 @@ func runDashboard() {
 	tabTrends, updateTrends := createTrendsTab()
 	tabCost, updateCost := createCostTab()
 	tabProjects, updateProjects := createProjectsTab()
+	tabHeatmap, updateHeatmap := createHeatmapTab()
 	tabSearch := createSearchTab(app)
 	tabSettings := createSettingsTab(app, restoreDashboard)
 
@@ -56,13 +57,14 @@ func runDashboard() {
 	infoPages.AddPage("Logs", tabLogs, true, false)
 	infoPages.AddPage("Stats", tabStats, true, false)
 	infoPages.AddPage("Trends", tabTrends, true, false)
+	infoPages.AddPage("Heatmap", tabHeatmap, true, false)
 	infoPages.AddPage("Cost", tabCost, true, false)
 	infoPages.AddPage("Projects", tabProjects, true, false)
 	infoPages.AddPage("Search", tabSearch, true, false)
 	infoPages.AddPage("Settings", tabSettings, true, false)
 
 	// Create the tab text
-	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Cost", "Projects", "Search", "Settings"}
+	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Heatmap", "Cost", "Projects", "Search", "Settings"}
 	updateTabBar := func(activeTab string) {
 		tabBar.Clear()
 		for i, tab := range tabs {
@@ -103,6 +105,8 @@ func runDashboard() {
 						updateStats()
 					case "Trends":
 						updateTrends()
+					case "Heatmap":
+						updateHeatmap()
 					case "Cost":
 						updateCost()
 					case "Projects":
@@ -681,6 +685,110 @@ func createTrendsTab() (tview.Primitive, func()) {
 	return flex, renderChart
 }
 
+func createHeatmapTab() (tview.Primitive, func()) {
+	metric := "Logs"
+	heatmapView := tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	heatmapView.SetBorder(true).SetTitle(" AI Activity Heatmap (Last 20 Weeks) ")
+
+	renderHeatmap := func() {
+		logs := getLogsFromAllFiles()
+		heatmapView.Clear()
+
+		now := time.Now()
+		// Get to the most recent Saturday
+		daysToSub := int(now.Weekday()) - int(time.Saturday)
+		if daysToSub > 0 {
+			daysToSub -= 7
+		}
+		endOfWeek := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -daysToSub)
+		
+		numWeeks := 20
+		startDay := endOfWeek.AddDate(0, 0, -(numWeeks*7 - 1)) // 20 weeks ago, Sunday
+
+		dailyVals := make(map[string]int)
+
+		for _, log := range logs {
+			logTime, err := parseTimestamp(log.Timestamp)
+			if err != nil {
+				continue
+			}
+
+			day := time.Date(logTime.Year(), logTime.Month(), logTime.Day(), 0, 0, 0, 0, logTime.Location())
+			if day.Before(startDay) || day.After(now) {
+				continue
+			}
+
+			key := day.Format("2006-01-02")
+			if metric == "Tokens" {
+				dailyVals[key] += log.TokensIn + log.TokensOut
+			} else {
+				dailyVals[key]++
+			}
+		}
+
+		getColor := func(val int) string {
+			if val == 0 {
+				return "[#303030]"
+			}
+			if metric == "Tokens" {
+				if val <= 5000 { return "[#0e4429]" }
+				if val <= 20000 { return "[#006d32]" }
+				if val <= 50000 { return "[#26a641]" }
+				return "[#39d353]"
+			} else {
+				if val <= 2 { return "[#0e4429]" }
+				if val <= 5 { return "[#006d32]" }
+				if val <= 10 { return "[#26a641]" }
+				return "[#39d353]"
+			}
+		}
+
+		dayNames := []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+		grid := make([]string, 7)
+		
+		for w := 0; w < numWeeks; w++ {
+			for d := 0; d < 7; d++ {
+				currentDay := startDay.AddDate(0, 0, w*7+d)
+				if currentDay.After(now) {
+					grid[d] += "  "
+					continue
+				}
+				key := currentDay.Format("2006-01-02")
+				val := dailyVals[key]
+				color := getColor(val)
+				grid[d] += fmt.Sprintf("%s■[-] ", color)
+			}
+		}
+
+		fmt.Fprintln(heatmapView, "")
+		for i := 0; i < 7; i++ {
+			fmt.Fprintf(heatmapView, "  [white]%s[-]  %s\n", dayNames[i], grid[i])
+		}
+		
+		fmt.Fprintln(heatmapView, "")
+		if metric == "Tokens" {
+			fmt.Fprintf(heatmapView, "  [gray]Legend: [#303030]■[-] 0  [#0e4429]■[-] 1-5k  [#006d32]■[-] 5k-20k  [#26a641]■[-] 20k-50k  [#39d353]■[-] 50k+ Tokens\n")
+		} else {
+			fmt.Fprintf(heatmapView, "  [gray]Legend: [#303030]■[-] 0  [#0e4429]■[-] 1-2   [#006d32]■[-] 3-5    [#26a641]■[-] 6-10    [#39d353]■[-] 11+ Logs\n")
+		}
+	}
+
+	metricForm := tview.NewForm().
+		AddDropDown("Metric", []string{"Logs", "Tokens"}, 0, func(option string, _ int) {
+			metric = option
+			renderHeatmap()
+		})
+	metricForm.SetHorizontal(true).SetBorder(false)
+
+	renderHeatmap()
+
+	flex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(metricForm, 3, 0, true).
+		AddItem(heatmapView, 0, 1, false)
+
+	return flex, renderHeatmap
+}
+
 func createCostTab() (tview.Primitive, func()) {
 	mainFlex := tview.NewFlex()
 
@@ -985,6 +1093,12 @@ func createSettingsTab(app *tview.Application, restoreDashboard func()) tview.Pr
 	form.AddInputField("Alert Threshold (0.0 - 1.0)", fmt.Sprintf("%.2f", config.Budget.AlertThreshold), 15, nil, func(text string) {
 		if val, err := strconv.ParseFloat(text, 64); err == nil {
 			config.Budget.AlertThreshold = val
+		}
+	})
+
+	form.AddInputField("Waste Threshold (Tokens/Req)", fmt.Sprintf("%d", config.Budget.WasteThresholdTokens), 15, nil, func(text string) {
+		if val, err := strconv.Atoi(text); err == nil {
+			config.Budget.WasteThresholdTokens = val
 		}
 	})
 

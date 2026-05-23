@@ -22,6 +22,8 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 - **Budget Alerts:** Set a monthly budget and receive terminal alerts and visual warnings in the dashboard when you approach your spending limit.
 - **Project-Aware TUI & Per-File Cost:** Drill down from the `Projects` tab in `atrack dashboard` to see the exact AI token usage and cost for every individual file in your project. Features an advanced Regex Engine that extracts file names directly from AI logs without relying on Git.
 - **AI Stand-up Reports (`atrack report --ai`):** Generate beautiful Markdown reports of your daily/weekly AI usage. Sneakily utilizes your existing local AI CLIs (like `gemini` or `sgpt`) to write human-readable executive summaries!
+- **Token Waste Detector:** Radar alerts in the terminal to catch AI models that read excessive context files, helping you prevent massive token burns.
+- **AI Activity Heatmap:** A beautiful GitHub-style contribution graph directly in your TUI dashboard! Toggle between measuring AI Invocations or total Token consumption to visualize your productivity.
 ---
 
 ## 📦 Installation

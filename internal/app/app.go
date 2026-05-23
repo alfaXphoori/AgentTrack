@@ -47,9 +47,10 @@ type PricingConfig struct {
 }
 
 type BudgetConfig struct {
-	Enabled        bool    `json:"enabled"`
-	MaxMonthlyCost float64 `json:"max_monthly_cost"`
-	AlertThreshold float64 `json:"alert_threshold"`
+	Enabled              bool    `json:"enabled"`
+	MaxMonthlyCost       float64 `json:"max_monthly_cost"`
+	AlertThreshold       float64 `json:"alert_threshold"`
+	WasteThresholdTokens int     `json:"waste_threshold_tokens"`
 }
 
 type Config struct {
@@ -205,6 +206,9 @@ func loadConfig() {
 	if config.Budget.MaxMonthlyCost == 0 && config.Budget.AlertThreshold == 0 {
 		config.Budget.MaxMonthlyCost = 10.0
 		config.Budget.AlertThreshold = 0.8
+	}
+	if config.Budget.WasteThresholdTokens == 0 {
+		config.Budget.WasteThresholdTokens = 100000
 	}
 
 	if config.Storage.LogFilePrefix == "" {
@@ -832,6 +836,22 @@ func checkBudgetAlerts(currentLogCost float64) {
 	}
 }
 
+func checkTokenWasteAlert(tokensIn int) {
+	if !config.Budget.Enabled || config.Budget.WasteThresholdTokens <= 0 {
+		return
+	}
+	if tokensIn >= config.Budget.WasteThresholdTokens {
+		fmt.Println()
+		fmt.Println(strings.Repeat("=", 60))
+		fmt.Println(ColorRed + "🚨 [AGENT-TRACK] HIGH CONTEXT WASTE DETECTED! 🚨" + ColorReset)
+		fmt.Printf(ColorYellow+"⚠️  The AI just consumed %d input tokens in a single request.\n"+ColorReset, tokensIn)
+		fmt.Println(ColorYellow + "   This usually means it's reading too many unnecessary files." + ColorReset)
+		fmt.Println(ColorYellow + "   Consider checking your .aiderignore / context settings to save costs." + ColorReset)
+		fmt.Println(strings.Repeat("=", 60))
+		fmt.Println()
+	}
+}
+
 func extractFilesFromText(text string) []string {
 	if text == "" {
 		return nil
@@ -912,6 +932,7 @@ func addLog(entry LogEntry) {
 	fmt.Printf("✨ "+ColorGreen+"Log added:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] ("+ColorPurple+"%s"+ColorReset+")%s\n", entry.Timestamp, entry.Category, estStr)
 
 	checkBudgetAlerts(entry.Cost)
+	checkTokenWasteAlert(entry.TokensIn)
 }
 
 func searchLogs(keyword string, dateFilter DateFilter) {
@@ -2306,6 +2327,34 @@ func updateConfig(key string, values []string) {
 		config.Storage.LogFilePrefix = val
 	case "pricing.currency":
 		config.Pricing.Currency = val
+	case "budget.enabled":
+		b, err := parseBool(val)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.Budget.Enabled = b
+	case "budget.max_monthly_cost":
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.Budget.MaxMonthlyCost = f
+	case "budget.alert_threshold":
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.Budget.AlertThreshold = f
+	case "budget.waste_threshold_tokens":
+		i, err := strconv.Atoi(val)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		config.Budget.WasteThresholdTokens = i
 	default:
 		fmt.Printf("Error: Unknown config key: %s\n", key)
 		showConfigHelp()
