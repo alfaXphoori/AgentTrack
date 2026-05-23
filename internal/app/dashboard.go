@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ func runDashboard() {
 	tabStats, updateStats := createStatsTab()
 	tabTrends, updateTrends := createTrendsTab()
 	tabCost, updateCost := createCostTab()
+	tabProjects, updateProjects := createProjectsTab()
 	tabSearch := createSearchTab(app)
 	tabSettings := createSettingsTab(app, restoreDashboard)
 
@@ -55,11 +57,12 @@ func runDashboard() {
 	infoPages.AddPage("Stats", tabStats, true, false)
 	infoPages.AddPage("Trends", tabTrends, true, false)
 	infoPages.AddPage("Cost", tabCost, true, false)
+	infoPages.AddPage("Projects", tabProjects, true, false)
 	infoPages.AddPage("Search", tabSearch, true, false)
 	infoPages.AddPage("Settings", tabSettings, true, false)
 
 	// Create the tab text
-	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Cost", "Search", "Settings"}
+	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Cost", "Projects", "Search", "Settings"}
 	updateTabBar := func(activeTab string) {
 		tabBar.Clear()
 		for i, tab := range tabs {
@@ -102,6 +105,8 @@ func runDashboard() {
 						updateTrends()
 					case "Cost":
 						updateCost()
+					case "Projects":
+						updateProjects()
 					}
 				})
 			}
@@ -967,6 +972,22 @@ func createSettingsTab(app *tview.Application, restoreDashboard func()) tview.Pr
 		}
 	})
 
+	form.AddCheckbox("Enable Budget Alerts", config.Budget.Enabled, func(checked bool) {
+		config.Budget.Enabled = checked
+	})
+
+	form.AddInputField("Max Monthly Budget ($)", fmt.Sprintf("%.2f", config.Budget.MaxMonthlyCost), 15, nil, func(text string) {
+		if val, err := strconv.ParseFloat(text, 64); err == nil {
+			config.Budget.MaxMonthlyCost = val
+		}
+	})
+
+	form.AddInputField("Alert Threshold (0.0 - 1.0)", fmt.Sprintf("%.2f", config.Budget.AlertThreshold), 15, nil, func(text string) {
+		if val, err := strconv.ParseFloat(text, 64); err == nil {
+			config.Budget.AlertThreshold = val
+		}
+	})
+
 	form.AddButton("Save Changes", func() {
 		if err := saveConfig(); err == nil {
 			showModal(app, restoreDashboard, "Success", "Configuration saved successfully!")
@@ -1013,4 +1034,144 @@ func showModal(app *tview.Application, restoreDashboard func(), title, message s
 		})
 
 	app.SetRoot(modal, true)
+}
+
+func createProjectsTab() (tview.Primitive, func()) {
+	table := tview.NewTable().
+		SetBorders(false).
+		SetSelectable(true, false)
+
+	currentProject := ""
+	var updateFunc func()
+
+	table.SetSelectedFunc(func(row, column int) {
+		if row == 0 {
+			return
+		}
+		if currentProject == "" {
+			cell := table.GetCell(row, 0)
+			if cell != nil {
+				currentProject = cell.Text
+				updateFunc()
+			}
+		}
+	})
+
+	table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC || event.Key() == tcell.KeyBackspace || event.Key() == tcell.KeyBackspace2 {
+			if currentProject != "" {
+				currentProject = ""
+				updateFunc()
+				return nil
+			}
+		}
+		return event
+	})
+
+	updateFunc = func() {
+		logs := getLogsFromAllFiles()
+		table.Clear()
+
+		if currentProject == "" {
+			// SHOW PROJECTS LIST
+			headers := []string{"Project Name (Press Enter to Drill-down)", "Logs Count", "Total Cost ($)", "Last Active"}
+			for i, h := range headers {
+				table.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false).SetExpansion(1))
+			}
+
+			type projStats struct {
+				count int
+				cost  float64
+				last  string
+			}
+			stats := make(map[string]*projStats)
+
+			for _, l := range logs {
+				proj := filepath.Base(l.Workspace)
+				if proj == "." || proj == "/" {
+					proj = "Unknown"
+				}
+				if stats[proj] == nil {
+					stats[proj] = &projStats{}
+				}
+				stats[proj].count++
+				stats[proj].cost += l.Cost
+				if l.Timestamp > stats[proj].last {
+					stats[proj].last = l.Timestamp
+				}
+			}
+
+			type kv struct {
+				Key   string
+				Value *projStats
+			}
+			var ss []kv
+			for k, v := range stats {
+				ss = append(ss, kv{k, v})
+			}
+			sort.Slice(ss, func(i, j int) bool {
+				return ss[i].Value.count > ss[j].Value.count
+			})
+
+			for row, kv := range ss {
+				table.SetCell(row+1, 0, tview.NewTableCell(kv.Key).SetTextColor(tcell.ColorGreen))
+				table.SetCell(row+1, 1, tview.NewTableCell(fmt.Sprintf("%d", kv.Value.count)).SetTextColor(tcell.ColorWhite))
+				table.SetCell(row+1, 2, tview.NewTableCell(fmt.Sprintf("$%.4f", kv.Value.cost)).SetTextColor(tcell.ColorRed))
+				table.SetCell(row+1, 3, tview.NewTableCell(kv.Value.last).SetTextColor(tcell.ColorGray))
+			}
+		} else {
+			// SHOW PER-FILE LIST FOR PROJECT
+			headers := []string{fmt.Sprintf("Files in [%s] (Press ESC to go back)", currentProject), "Logs Count", "Total Tokens", "Total Cost ($)"}
+			for i, h := range headers {
+				table.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false).SetExpansion(1))
+			}
+
+			type fileStats struct {
+				count  int
+				tokens int
+				cost   float64
+			}
+			stats := make(map[string]*fileStats)
+
+			for _, l := range logs {
+				proj := filepath.Base(l.Workspace)
+				if proj == "." || proj == "/" {
+					proj = "Unknown"
+				}
+				if proj == currentProject {
+					for _, f := range l.Files {
+						if stats[f] == nil {
+							stats[f] = &fileStats{}
+						}
+						stats[f].count++
+						stats[f].tokens += l.TokensIn + l.TokensOut
+						// Rough estimate of file cost (divide log cost equally by files changed)
+						stats[f].cost += l.Cost / float64(len(l.Files))
+					}
+				}
+			}
+
+			type kv struct {
+				Key   string
+				Value *fileStats
+			}
+			var ss []kv
+			for k, v := range stats {
+				ss = append(ss, kv{k, v})
+			}
+			sort.Slice(ss, func(i, j int) bool {
+				return ss[i].Value.cost > ss[j].Value.cost
+			})
+
+			for row, kv := range ss {
+				table.SetCell(row+1, 0, tview.NewTableCell(kv.Key).SetTextColor(tcell.ColorGreen))
+				table.SetCell(row+1, 1, tview.NewTableCell(fmt.Sprintf("%d", kv.Value.count)).SetTextColor(tcell.ColorWhite))
+				table.SetCell(row+1, 2, tview.NewTableCell(fmt.Sprintf("%d", kv.Value.tokens)).SetTextColor(tcell.ColorBlue))
+				table.SetCell(row+1, 3, tview.NewTableCell(fmt.Sprintf("$%.4f", kv.Value.cost)).SetTextColor(tcell.ColorRed))
+			}
+		}
+	}
+
+	updateFunc()
+	return tview.NewFrame(table).SetBorders(0, 0, 0, 0, 0, 0), updateFunc
 }

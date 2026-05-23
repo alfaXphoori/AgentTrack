@@ -46,6 +46,12 @@ type PricingConfig struct {
 	Models   map[string]ModelPrice `json:"models"`
 }
 
+type BudgetConfig struct {
+	Enabled        bool    `json:"enabled"`
+	MaxMonthlyCost float64 `json:"max_monthly_cost"`
+	AlertThreshold float64 `json:"alert_threshold"`
+}
+
 type Config struct {
 	ProjectName     string                `json:"project_name"`
 	DefaultModel    string                `json:"default_model"`
@@ -55,6 +61,7 @@ type Config struct {
 	Display         DisplayConfig         `json:"display"`
 	Storage         StorageConfig         `json:"storage"`
 	Pricing         PricingConfig         `json:"pricing"`
+	Budget          BudgetConfig          `json:"budget"`
 }
 
 type LogEntry struct {
@@ -74,6 +81,7 @@ type LogEntry struct {
 	Status      string   `json:"status,omitempty"`     // Success or error status
 	ToolsUsed   []string `json:"tools_used,omitempty"` // Tools invoked by the AI
 	Tags        []string `json:"tags,omitempty"`
+	Files       []string `json:"files,omitempty"`      // Files modified or mentioned
 }
 
 type DateFilter struct {
@@ -91,7 +99,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.16.1"
+	Version     = "0.16.2"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
@@ -155,6 +163,11 @@ func defaultConfig() Config {
 			Currency: "USD",
 			Models:   map[string]ModelPrice{},
 		},
+		Budget: BudgetConfig{
+			Enabled:        false,
+			MaxMonthlyCost: 10.0, // Default $10
+			AlertThreshold: 0.8,  // Default 80% warning
+		},
 	}
 }
 
@@ -186,6 +199,16 @@ func loadConfig() {
 		if err == nil {
 			json.Unmarshal(data, &config)
 		}
+	}
+
+	// Apply defaults for new fields if they are missing
+	if config.Budget.MaxMonthlyCost == 0 && config.Budget.AlertThreshold == 0 {
+		config.Budget.MaxMonthlyCost = 10.0
+		config.Budget.AlertThreshold = 0.8
+	}
+
+	if config.Storage.LogFilePrefix == "" {
+		config.Storage.LogFilePrefix = "atrack_logs"
 	}
 }
 
@@ -775,6 +798,78 @@ func estimateTokens(text string) int {
 	}
 	return int(math.Ceil(float64(len(text)) / config.TokenEstimation.CharsPerToken))
 }
+func checkBudgetAlerts(currentLogCost float64) {
+	if !config.Budget.Enabled || config.Budget.MaxMonthlyCost <= 0 {
+		return
+	}
+
+	t := time.Now().In(getConfigLocation())
+	logPath := getLogPath(t)
+	logs := readLogsFromFile(logPath)
+
+	var totalCost float64
+	for _, l := range logs {
+		totalCost += l.Cost
+	}
+
+	thresholdValue := config.Budget.MaxMonthlyCost * config.Budget.AlertThreshold
+	prevCost := totalCost - currentLogCost
+
+	// Only alert if we just crossed the threshold to avoid spamming every single log
+	crossedLimit := prevCost < config.Budget.MaxMonthlyCost && totalCost >= config.Budget.MaxMonthlyCost
+	crossedWarn := prevCost < thresholdValue && totalCost >= thresholdValue
+
+	if crossedLimit {
+		fmt.Println()
+		fmt.Println(strings.Repeat("=", 60))
+		fmt.Printf("🚨 "+ColorRed+"BUDGET EXCEEDED!"+ColorReset+" You have spent $%.2f (Limit: $%.2f) this month.\n", totalCost, config.Budget.MaxMonthlyCost)
+		fmt.Println(strings.Repeat("=", 60))
+	} else if crossedWarn {
+		fmt.Println()
+		fmt.Println(strings.Repeat("-", 60))
+		fmt.Printf("⚠️  "+ColorYellow+"BUDGET WARNING:"+ColorReset+" You have spent $%.2f (%.1f%% of $%.2f limit).\n", totalCost, (totalCost/config.Budget.MaxMonthlyCost)*100, config.Budget.MaxMonthlyCost)
+		fmt.Println(strings.Repeat("-", 60))
+	}
+}
+
+func extractFilesFromText(text string) []string {
+	if text == "" {
+		return nil
+	}
+
+	fileMap := make(map[string]bool)
+	var files []string
+
+	// Regex for explicitly mentioned files with common code extensions
+	// Matches words ending in .go, .js, .ts, .py, .html, .css, .json, .md, .yml, .yaml, .sh, .txt
+	extRegex := regexp.MustCompile(`\b[\w\-\.\/]+\.(go|js|ts|py|html|css|json|md|yml|yaml|sh|txt|rs|c|cpp|h|hpp|java|rb|php)\b`)
+	matches := extRegex.FindAllString(text, -1)
+	for _, m := range matches {
+		clean := strings.TrimSpace(m)
+		if !fileMap[clean] && clean != "" {
+			fileMap[clean] = true
+			files = append(files, clean)
+		}
+	}
+
+	// Regex for paths in backticks (common in AI responses) e.g. `src/main.go`
+	btRegex := regexp.MustCompile("`([^`]+)`")
+	btMatches := btRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range btMatches {
+		if len(m) > 1 {
+			clean := strings.TrimSpace(m[1])
+			// Only consider it a file if it looks like a path or has an extension
+			if strings.Contains(clean, "/") || strings.Contains(clean, ".") {
+				if !fileMap[clean] && clean != "" && !strings.ContainsAny(clean, " \n\t") {
+					fileMap[clean] = true
+					files = append(files, clean)
+				}
+			}
+		}
+	}
+
+	return files
+}
 
 func addLog(entry LogEntry) {
 	loadConfig()
@@ -792,6 +887,15 @@ func addLog(entry LogEntry) {
 		entry.Model = config.DefaultModel
 	}
 
+	// Extract files from Question and Answer
+	if len(entry.Files) == 0 {
+		combinedText := entry.Question + " " + entry.Answer + " " + entry.Message
+		extracted := extractFilesFromText(combinedText)
+		if len(extracted) > 0 {
+			entry.Files = extracted
+		}
+	}
+
 	if err := appendLogToFile(path, entry); err != nil {
 		fmt.Printf("❌ "+ColorRed+"Error adding log:"+ColorReset+" %v\n", err)
 		return
@@ -806,6 +910,8 @@ func addLog(entry LogEntry) {
 		estStr = " [" + ColorYellow + "Tokens Estimated" + ColorReset + "]"
 	}
 	fmt.Printf("✨ "+ColorGreen+"Log added:"+ColorReset+" ["+ColorCyan+"%s"+ColorReset+"] ("+ColorPurple+"%s"+ColorReset+")%s\n", entry.Timestamp, entry.Category, estStr)
+
+	checkBudgetAlerts(entry.Cost)
 }
 
 func searchLogs(keyword string, dateFilter DateFilter) {
@@ -1254,22 +1360,7 @@ copilot() {
   "%s" auto "copilot $*" "Copilot CLI interaction" "copilot-cli" 0 0 >/dev/null 2>&1
   return $res
 }
-
-atrack_auto_init() {
-  if [ -w "." ] && [ ! -f ".cursorrules" ]; then
-      "%s" init >/dev/null 2>&1
-  fi
-}
-if [[ -n "$ZSH_VERSION" ]]; then
-  autoload -U add-zsh-hook 2>/dev/null
-  add-zsh-hook chpwd atrack_auto_init 2>/dev/null
-elif [[ -n "$BASH_VERSION" ]]; then
-  if [[ ! "$PROMPT_COMMAND" == *"atrack_auto_init"* ]]; then
-      export PROMPT_COMMAND="atrack_auto_init; $PROMPT_COMMAND"
-  fi
-fi
-atrack_auto_init
-# <<< AgentTrack Shell Hooks <<<`, executable, executable, executable)
+# <<< AgentTrack Shell Hooks <<<`, executable, executable)
 
 	for _, profile := range profiles {
 		if _, err := os.Stat(profile); err != nil {
@@ -1294,47 +1385,7 @@ atrack_auto_init
 		}
 	}
 
-	// ---------------------------------------------------------------------------
-	// 2. PowerShell Hook (Windows)
-	// ---------------------------------------------------------------------------
-	if runtime.GOOS == "windows" {
-		psHook := fmt.Sprintf(`
-# AgentTrack Auto-Init Hook (PowerShell)
-function atrack_auto_init {
-    if (Test-Path -Path . -PathType Container) {
-        if (-not (Test-Path -Path ".cursorrules") -and (New-Object System.IO.DirectoryInfo ".").Attributes.HasFlag([System.IO.FileAttributes]::ReadOnly) -eq $false) {
-            & "%s" init > $null 2>&1
-        }
-    }
-}
-# Hook into prompt to check on every directory change
-if (-not (Get-Command atrack_auto_init -ErrorAction SilentlyContinue)) {
-    $old_prompt = $function:prompt
-    function prompt {
-        atrack_auto_init
-        &$old_prompt
-    }
-}
-`, executable)
-		// Target both PowerShell 5.1 and PowerShell 7+ profile paths
-		psProfiles := []string{
-			filepath.Join(home, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"),
-			filepath.Join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"),
-		}
-
-		for _, profilePath := range psProfiles {
-			os.MkdirAll(filepath.Dir(profilePath), 0755)
-			data, _ := os.ReadFile(profilePath)
-			if !strings.Contains(string(data), "atrack_auto_init") {
-				f, _ := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				if f != nil {
-					f.WriteString(psHook)
-					f.Close()
-					fmt.Printf("✅ Added Auto-Init hook to PowerShell profile: %s\n", profilePath)
-				}
-			}
-		}
-	}
+	// PowerShell Auto-Init hook was removed to prevent project-level file creation.
 }
 
 func removeInstallHooks() {
@@ -1510,12 +1561,144 @@ func watchLogs(interval time.Duration) {
 	}
 }
 
+func indentString(str string, prefix string) string {
+	lines := strings.Split(str, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = prefix + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func autoConfigureClients(ruleContent string) {
+	fmt.Println("🚀 Starting AgentTrack Auto-Config...")
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return
+	}
+
+	// 1. Claude Code
+	cmd := exec.Command("claude", "config", "set", "--global", "customInstructions", ruleContent)
+	if err := cmd.Run(); err == nil {
+		fmt.Println("✅ [Claude Code] Auto-configured global custom instructions.")
+	}
+
+	// 2. Aider
+	aiderPath := filepath.Join(home, ".aider.conf.yml")
+	aiderData, err := os.ReadFile(aiderPath)
+	if err == nil {
+		if !strings.Contains(string(aiderData), "message:") {
+			f, _ := os.OpenFile(aiderPath, os.O_APPEND|os.O_WRONLY, 0644)
+			f.WriteString("\nmessage: |\n" + indentString(ruleContent, "  ") + "\n")
+			f.Close()
+			fmt.Println("✅ [Aider] Appended AgentTrack instructions to ~/.aider.conf.yml.")
+		} else {
+			fmt.Println("⚠️  [Aider] 'message:' already exists in ~/.aider.conf.yml. Please configure manually.")
+		}
+	} else if os.IsNotExist(err) {
+		os.WriteFile(aiderPath, []byte("message: |\n"+indentString(ruleContent, "  ")+"\n"), 0644)
+		fmt.Println("✅ [Aider] Created ~/.aider.conf.yml with AgentTrack instructions.")
+	}
+
+	// 3. Windsurf
+	windsurfPath := filepath.Join(home, ".windsurfrules")
+	if _, err := os.Stat(windsurfPath); os.IsNotExist(err) {
+		os.WriteFile(windsurfPath, []byte(ruleContent), 0644)
+		fmt.Println("✅ [Windsurf] Created ~/.windsurfrules.")
+	}
+
+	// 4. Continue.dev
+	continuePath := filepath.Join(home, ".continue", "config.json")
+	if data, err := os.ReadFile(continuePath); err == nil {
+		var config map[string]interface{}
+		if json.Unmarshal(data, &config) == nil {
+			if _, ok := config["systemMessage"]; !ok {
+				config["systemMessage"] = ruleContent
+				newData, _ := json.MarshalIndent(config, "", "  ")
+				os.WriteFile(continuePath, newData, 0644)
+				fmt.Println("✅ [Continue.dev] Injected systemMessage into ~/.continue/config.json.")
+			} else {
+				fmt.Println("⚠️  [Continue.dev] systemMessage already exists. Please configure manually.")
+			}
+		}
+	}
+
+	// 5. Open Interpreter
+	oiDir := ""
+	if runtime.GOOS == "windows" {
+		oiDir = filepath.Join(os.Getenv("APPDATA"), "Open Interpreter", "profiles")
+	} else {
+		oiDir = filepath.Join(home, ".config", "open-interpreter", "profiles")
+	}
+	os.MkdirAll(oiDir, 0755)
+	oiPath := filepath.Join(oiDir, "default.yaml")
+	if _, err := os.Stat(oiPath); os.IsNotExist(err) {
+		os.WriteFile(oiPath, []byte("system_message: |\n"+indentString(ruleContent, "  ")+"\n"), 0644)
+		fmt.Println("✅ [Open Interpreter] Created default profile at " + oiPath)
+	}
+
+	// 6. Shell-GPT (sgpt)
+	sgptDir := filepath.Join(home, ".config", "shell_gpt", "roles")
+	os.MkdirAll(sgptDir, 0755)
+	sgptPath := filepath.Join(sgptDir, "atrack.json")
+	sgptRole := map[string]string{
+		"role": "You are a helpful CLI assistant. At the end of your response, always run this command or tell the user to run it:\n" + ruleContent,
+		"expect_commands": "true",
+	}
+	if sgptData, err := json.MarshalIndent(sgptRole, "", "  "); err == nil {
+		os.WriteFile(sgptPath, sgptData, 0644)
+		fmt.Println("✅ [Shell-GPT] Created 'atrack' role. Use: sgpt --role atrack <prompt>")
+	}
+
+	// 7. Cline / Roo Code
+	globalStoragePaths := []string{}
+	if runtime.GOOS == "darwin" {
+		globalStoragePaths = append(globalStoragePaths,
+			filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings.json"),
+			filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings.json"),
+		)
+	} else if runtime.GOOS == "windows" {
+		globalStoragePaths = append(globalStoragePaths,
+			filepath.Join(os.Getenv("APPDATA"), "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings.json"),
+			filepath.Join(os.Getenv("APPDATA"), "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings.json"),
+		)
+	} else {
+		globalStoragePaths = append(globalStoragePaths,
+			filepath.Join(home, ".config", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings.json"),
+			filepath.Join(home, ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings.json"),
+		)
+	}
+
+	for _, p := range globalStoragePaths {
+		if data, err := os.ReadFile(p); err == nil {
+			var config map[string]interface{}
+			if json.Unmarshal(data, &config) == nil {
+				if _, ok := config["customInstructions"]; !ok {
+					config["customInstructions"] = ruleContent
+					newData, _ := json.MarshalIndent(config, "", "  ")
+					os.WriteFile(p, newData, 0644)
+					fmt.Printf("✅ [VS Code Ext] Injected custom instructions into %s\n", filepath.Base(filepath.Dir(p)))
+				}
+			}
+		}
+	}
+
+	// 8. Antigravity (Gemini CLI)
+	geminiSkillsDir := filepath.Join(home, ".gemini", "config", "skills")
+	os.MkdirAll(geminiSkillsDir, 0755)
+	geminiPath := filepath.Join(geminiSkillsDir, "AgentTrack.md")
+	if _, err := os.Stat(geminiPath); os.IsNotExist(err) {
+		os.WriteFile(geminiPath, []byte(ruleContent), 0644)
+		fmt.Println("✅ [Antigravity] Added skill rule to ~/.gemini/config/skills/AgentTrack.md")
+	}
+}
+
 func initRules() {
 	executable, err := serviceExecutablePath()
 	if err != nil {
 		executable = "atrack"
 	}
-	// Use forward slashes for cross-platform compatibility in rule files
 	executable = filepath.ToSlash(executable)
 
 	ruleContent := fmt.Sprintf(`# AgentTrack Log Trigger
@@ -1525,37 +1708,30 @@ On every chat turn, you MUST execute this shell command to log the activity:
 - A: Short answer summary (max 50 chars).
 - Do not add conversational filler.
 `, executable)
-	files := []string{
-		".cursorrules",
-		".clinerules",
-		".roorules",
-		".windsurfrules",
-		"CLAUDE.md",
-		".aider.rules.md",
-		"QWEN.md",
+
+	appDir := getAppDir()
+	rulesFile := filepath.Join(appDir, "rules.md")
+
+	err = os.WriteFile(rulesFile, []byte(ruleContent), 0644)
+	if err != nil {
+		fmt.Printf("❌ Error creating global rules file: %v\n", err)
+		return
 	}
 
-	createdCount := 0
-	for _, file := range files {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			err := os.WriteFile(file, []byte(ruleContent), 0644)
-			if err == nil {
-				fmt.Printf("✨ Created %s\n", file)
-				createdCount++
-			} else {
-				fmt.Printf("❌ Error creating %s: %v\n", file, err)
-			}
-		} else {
-			fmt.Printf("⚠️  Skipped %s (already exists)\n", file)
-		}
-	}
+	fmt.Println("\n✅ AgentTrack global rules initialized successfully!")
+	fmt.Printf("Master rule file created at: %s\n\n", rulesFile)
 
-	if createdCount > 0 {
-		fmt.Println("\n✅ AgentTrack rules initialized successfully!")
-		fmt.Println("Agents like Cursor, Cline, Roo, Windsurf, Claude Code, and Aider will now auto-log to AgentTrack in this project.")
-	} else {
-		fmt.Println("\nNo new rule files were created.")
-	}
+	// Run auto-config logic
+	autoConfigureClients(ruleContent)
+
+	fmt.Println("\n------------------------------------------------------------------")
+	fmt.Println("⚠️  MANUAL SETUP REQUIRED FOR CURSOR")
+	fmt.Println("------------------------------------------------------------------")
+	fmt.Println("👉 Cursor: Go to Settings > General > Rules for AI and paste the content of the file.")
+	fmt.Println("👉 Codex / Copilot: Add the rule to your global GitHub Copilot CLI instructions.")
+	fmt.Println("👉 And more: Paste this rule into the system prompt setting of any other AI tool you use.")
+	fmt.Println("------------------------------------------------------------------")
+	fmt.Println("Project directories will no longer be cluttered with rule files!")
 }
 
 func Run() {
@@ -1656,6 +1832,13 @@ func Run() {
 		}
 
 		addLog(entry)
+	case "report":
+		if len(os.Args) < 3 {
+			// By default, generate report for today if no timeframe is provided
+			runReportCmd([]string{"today"})
+			return
+		}
+		runReportCmd(os.Args[2:])
 
 	case "list":
 		dateFilter, remaining, err := parseDateFilters(os.Args[2:])
@@ -2598,6 +2781,7 @@ func printFullUsage() {
 	printUsageItem(`atrack init`, "Initialize AgentTrack rules in the current project")
 	printUsageItem(`atrack edit <index> [field] <value>`, "Edit a log entry")
 	printUsageItem(`atrack delete <index>`, "Delete a log entry")
+	printUsageItem(`atrack report [--ai] [timeframe]`, "Generate developer Stand-up Report")
 	printUsageItem(`atrack export [md|csv|json]`, "Export data to files")
 	printUsageItem(`atrack pricing sync [all|model]`, "Sync model prices from OpenRouter")
 	printUsageItem(`atrack config [show|get|set|reset]`, "Manage application configuration")

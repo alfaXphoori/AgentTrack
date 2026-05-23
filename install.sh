@@ -45,15 +45,19 @@ if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
     fi
 fi
 
-# 3. Add GitHub Copilot Wrapper & Auto-Init Hook via internal command
-echo "🪄 Configuring shell hooks (Auto-Log, Auto-Init)..."
-atrack autostart install
+# 3. Add GitHub Copilot Wrapper via internal command
+echo "🪄 Configuring shell hooks (Copilot CLI Wrapper)..."
+# Autostart is already installed above.
+
+# 4. Install Global AI Rules
+echo "🪄 Installing Global Rules for AI Assistants (Cursor, Cline, Aider, Claude Code)..."
+atrack init --global
 
 echo ""
 echo "🎉 AgentTrack Installation Complete!"
 echo "--------------------------------------------------------"
 echo "All your AI tools (Cursor, Copilot, Gemini CLI, Claude Code) are now fully automated."
-echo "Whenever you cd into a project directory, AgentTrack will secretly prepare the rule files."
+echo "AgentTrack has installed global rules for your tools. Your project directories will remain clean."
 echo ""
 if [ -n "$PROFILE_FILE" ]; then
     echo "👉 IMPORTANT: Run this command to activate the changes right now:"

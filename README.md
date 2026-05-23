@@ -3,7 +3,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.16.1-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.16.2-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
@@ -17,16 +17,11 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ---
 
-## ✨ What's New in v0.16.1
-
-| Feature | Description |
-|:---|:---|
-| 🚀 **Multi-turn Tracking** | Robust logic that consolidates multi-step AI responses (text + tools) into single log entries. |
-| 🪟 **Registry Autostart** | Modern Windows background service setup via Registry (**no Administrator rights required**). |
-| 🌍 **Global Auto-Init** | Shell hooks for **PowerShell, Zsh, and Bash** that automatically setup tracking rules in any project you enter. |
-| 🧹 **Clean Start (Prime)** | New `prime` logic to ignore historical AI data and only track interactions after installation. |
-| 🔄 **Smart Update** | `atrack update` now automatically refreshes background services after a successful build. |
-
+## ✨ What's New in v0.16.2
+- **Global Auto-Config:** Completely redesigned initialization to stop placing rule files in project directories. `atrack init` now automatically injects global logging rules directly into AI tools (Claude Code, Aider, Cline, Continue, Open Interpreter, Shell-GPT, etc.).
+- **Budget Alerts:** Set a monthly budget and receive terminal alerts and visual warnings in the dashboard when you approach your spending limit.
+- **Project-Aware TUI & Per-File Cost:** Drill down from the `Projects` tab in `atrack dashboard` to see the exact AI token usage and cost for every individual file in your project. Features an advanced Regex Engine that extracts file names directly from AI logs without relying on Git.
+- **AI Stand-up Reports (`atrack report --ai`):** Generate beautiful Markdown reports of your daily/weekly AI usage. Sneakily utilizes your existing local AI CLIs (like `gemini` or `sgpt`) to write human-readable executive summaries!
 ---
 
 ## 📦 Installation

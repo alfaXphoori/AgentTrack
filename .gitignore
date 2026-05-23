@@ -12,3 +12,4 @@ error.log
 *.swo
 .DS_Store
 dist/
+scopus-publication/
