@@ -145,8 +145,8 @@ const splashBanner = `
 
 func defaultConfig() Config {
 	return Config{
-		ProjectName:  "AgentTrack Activity Tracker",
-		DefaultModel: "gemini-1.5-flash",
+		ProjectName:  "Project",
+		DefaultModel: "Gemini 3.1",
 		Timezone:     "Asia/Bangkok",
 		AutoRun:      false,
 		TokenEstimation: TokenEstimationConfig{
