@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -715,7 +716,7 @@ func processGeminiSession(filePath, stateDir string) {
 		}
 	}
 
-	atrackBin, _ := os.Executable()
+	// atrackBin removed
 
 	for idx := loggedPairs; idx < len(pairs); idx++ {
 		p := pairs[idx]
@@ -737,13 +738,35 @@ func processGeminiSession(filePath, stateDir string) {
 			summary = summary[:150]
 		}
 
-		cmd := exec.Command(atrackBin, "auto", p.Question, summary, p.Model, ti, to, dur, sessionID, "success", toolsStr, "gemini-cli")
-		err := cmd.Run()
-
-		icon := "✅"
-		if err != nil {
-			icon = "⚠️ "
+		tIn, _ := strconv.Atoi(ti)
+		tOut, _ := strconv.Atoi(to)
+		durFloat, _ := strconv.ParseFloat(dur, 64)
+		var toolsUsed []string
+		if toolsStr != "" {
+			toolsUsed = strings.Split(toolsStr, ",")
 		}
+
+		entry := LogEntry{
+			Category:    "AutoLog",
+			Question:    p.Question,
+			Answer:      summary,
+			Model:       p.Model,
+			TokensIn:    tIn,
+			TokensOut:   tOut,
+			IsEstimated: false,
+			Duration:    durFloat,
+			SessionID:   sessionID,
+			Status:      "success",
+			ToolsUsed:   toolsUsed,
+			Tags:        []string{"gemini-cli"},
+		}
+
+		loadConfig()
+		if cost, ok := calculateLogCost(entry); ok {
+			entry.Cost = cost
+		}
+		addLog(entry)
+		icon := "✅"
 
 		qDisp := p.Question
 		if len(qDisp) > 60 {

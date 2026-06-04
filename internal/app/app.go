@@ -2,9 +2,11 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -301,7 +303,7 @@ func appendLogToFile(path string, entry LogEntry) error {
 						}
 					}
 					// 2. Check for duplicate manual logs within a very short window (1s)
-					if entry.SessionID == "" && entry.Message == lastEntry.Message && entry.Category == lastEntry.Category {
+					if entry.SessionID == "" && entry.Message == lastEntry.Message && entry.Category == lastEntry.Category && entry.Question == lastEntry.Question && entry.Answer == lastEntry.Answer {
 						if entry.Timestamp == lastEntry.Timestamp {
 							return nil // Skip duplicate
 						}
@@ -1098,7 +1100,7 @@ func renderLogs(logs []LogEntry) {
 		timeLabel := shortLogTime(log.Timestamp)
 		categoryLabel := shortCategory(category)
 
-		if category == "AutoLog" && log.Question != "" {
+		if (category == "AutoLog" || category == "ActiveRun") && log.Question != "" {
 			fmt.Printf(ColorBlue+"#%-4d"+ColorReset+" | "+ColorGreen+"%s"+ColorReset+" | "+ColorPurple+"%-8s"+ColorReset+" | %s\n", displayID, timeLabel, categoryLabel, metadata)
 			if tagsLine != "" {
 				fmt.Printf("%-5s | %-5s | %-8s | %s\n", "", "", "", tagsLine)
@@ -1362,24 +1364,16 @@ func installHooks() {
 
 	fullHookBlock := fmt.Sprintf(`
 # >>> AgentTrack Shell Hooks >>>
-unalias gh 2>/dev/null
-unalias copilot 2>/dev/null
-
+# AgentTrack: Intercept Copilot CLI
 gh() {
   if [ "$1" = "copilot" ]; then
+    "%s" run "gh $*" "gh-copilot"
+  else
     command gh "$@"
-    local res=$?
-    "%s" auto "gh $*" "Copilot interaction" "gh-copilot" 0 0 >/dev/null 2>&1
-    return $res
   fi
-  command gh "$@"
 }
-
 copilot() {
-  command copilot "$@"
-  local res=$?
-  "%s" auto "copilot $*" "Copilot CLI interaction" "copilot-cli" 0 0 >/dev/null 2>&1
-  return $res
+  "%s" run "copilot $*" "copilot-cli"
 }
 # <<< AgentTrack Shell Hooks <<<`, executable, executable)
 
@@ -1782,6 +1776,70 @@ func Run() {
 			}
 		}
 		addLog(LogEntry{Message: message, Category: category, Tags: tags})
+
+	case "run":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: Please provide a command to run (e.g., atrack run \"aider --message 'fix bug'\")")
+			return
+		}
+
+		agentCmdStr := os.Args[2]
+		model := config.DefaultModel
+		if len(os.Args) > 3 && os.Args[3] != "" {
+			model = os.Args[3]
+		}
+
+		fmt.Printf("🚀 AgentTrack Active Monitor: Starting %s\n", model)
+		startTime := time.Now()
+
+		var outBuf bytes.Buffer
+		mwOut := io.MultiWriter(os.Stdout, &outBuf)
+
+		err := runCmdWithPTY(agentCmdStr, mwOut)
+		if err != nil {
+			// Fallback if PTY fails or is unsupported (e.g., Windows)
+			cmd := exec.Command("sh", "-c", agentCmdStr)
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = mwOut
+			cmd.Stderr = mwOut
+			err = cmd.Run()
+		}
+		endTime := time.Now()
+		duration := endTime.Sub(startTime).Seconds()
+
+		status := "success"
+		if err != nil {
+			status = "failed"
+			fmt.Printf("\n⚠️ Process exited with error: %v\n", err)
+		}
+
+		outputStr := outBuf.String()
+
+		toolCallKeywords := []string{"Tool Call:", "Calling tool", "cmd", "grep_search", "view_file", "replace_file_content"}
+		toolCount := 0
+		for _, kw := range toolCallKeywords {
+			toolCount += strings.Count(outputStr, kw)
+		}
+
+		isEst := true
+		tIn := estimateTokens(agentCmdStr)
+		tOut := estimateTokens(outputStr)
+
+		entry := LogEntry{
+			Category:    "ActiveRun",
+			Question:    agentCmdStr,
+			Answer:      outputStr,
+			Model:       model,
+			TokensIn:    tIn,
+			TokensOut:   tOut,
+			IsEstimated: isEst,
+			Duration:    duration,
+			Status:      status,
+			ToolsUsed:   []string{fmt.Sprintf("%d_detected", toolCount)},
+		}
+
+		addLog(entry)
+		fmt.Printf("\n✅ AgentTrack Telemetry Captured: %.2f seconds, %d tool calls estimated.\n", duration, toolCount)
 
 	case "auto":
 		question, answer, model := "", "", config.DefaultModel
