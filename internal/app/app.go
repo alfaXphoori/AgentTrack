@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/pkoukk/tiktoken-go"
 )
 type TokenEstimationConfig struct {
 	Enabled       bool    `json:"enabled"`
@@ -83,6 +84,8 @@ type LogEntry struct {
 	Cost        float64  `json:"cost,omitempty"`       // Calculated cost at the time of logging
 	Status      string   `json:"status,omitempty"`     // Success or error status
 	ToolsUsed   []string `json:"tools_used,omitempty"` // Tools invoked by the AI
+	GitBranch   string   `json:"git_branch,omitempty"` // Current Git branch at time of log
+	GitRoot     string   `json:"git_root,omitempty"`   // Root of the Git repository
 	Tags        []string `json:"tags,omitempty"`
 	Files       []string `json:"files,omitempty"`      // Files modified or mentioned
 }
@@ -102,7 +105,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.16.2"
+	Version     = "0.17.0"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"
@@ -802,7 +805,12 @@ func estimateTokens(text string) int {
 	if text == "" || !config.TokenEstimation.Enabled {
 		return 0
 	}
-	return int(math.Ceil(float64(len(text)) / config.TokenEstimation.CharsPerToken))
+	tke, err := tiktoken.GetEncoding("cl100k_base")
+	if err != nil {
+		return int(math.Ceil(float64(len(text)) / config.TokenEstimation.CharsPerToken))
+	}
+	token := tke.Encode(text, nil, nil)
+	return len(token)
 }
 func checkBudgetAlerts(currentLogCost float64) {
 	if !config.Budget.Enabled || config.Budget.MaxMonthlyCost <= 0 {
@@ -893,7 +901,16 @@ func extractFilesFromText(text string) []string {
 	return files
 }
 
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?$=]*[a-zA-Z]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[=><]`)
+
+func stripANSI(str string) string {
+	return ansiRe.ReplaceAllString(str, "")
+}
+
 func addLog(entry LogEntry) {
+	entry.Question = stripANSI(entry.Question)
+	entry.Answer = stripANSI(entry.Answer)
+
 	loadConfig()
 	now := time.Now().In(getConfigLocation())
 	entry.Timestamp = now.Format("2006-01-02 15:04:05")
@@ -907,6 +924,16 @@ func addLog(entry LogEntry) {
 	}
 	if entry.Model == "" {
 		entry.Model = config.DefaultModel
+	}
+
+	if entry.GitBranch == "" || entry.GitRoot == "" {
+		branch, root := getGitContext(entry.Workspace)
+		if entry.GitBranch == "" {
+			entry.GitBranch = branch
+		}
+		if entry.GitRoot == "" {
+			entry.GitRoot = root
+		}
 	}
 
 	// Extract files from Question and Answer
@@ -1749,6 +1776,44 @@ On every chat turn, you MUST execute this shell command to log the activity:
 	fmt.Println("Project directories will no longer be cluttered with rule files!")
 }
 
+var ansiEscapeRegex = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+var oscRegex = regexp.MustCompile(`\x1B\][^\x07\x1B]*[\x07\x1B]`)
+
+// sanitizePTYOutput cleans up raw PTY output by removing ANSI escapes, handling \r overwrites, and \b backspaces
+func sanitizePTYOutput(raw string) string {
+	// 1. Remove OSC escape sequences (e.g. window title settings \x1B]0;... \x07)
+	cleaned := oscRegex.ReplaceAllString(raw, "")
+	// 2. Remove ANSI escape sequences
+	cleaned = ansiEscapeRegex.ReplaceAllString(cleaned, "")
+	
+	// Normalize \r\n to \n so we don't treat the end of a line as an overwrite
+	cleaned = strings.ReplaceAll(cleaned, "\r\n", "\n")
+
+	lines := strings.Split(cleaned, "\n")
+	var result []string
+	for _, line := range lines {
+		if idx := strings.LastIndex(line, "\r"); idx != -1 {
+			line = line[idx+1:]
+		}
+		var buf []rune
+		for _, r := range line {
+			if r == '\b' {
+				if len(buf) > 0 {
+					buf = buf[:len(buf)-1]
+				}
+			} else {
+				buf = append(buf, r)
+			}
+		}
+		str := string(buf)
+		str = strings.TrimRight(str, " \t")
+		if str != "" {
+			result = append(result, str)
+		}
+	}
+	return strings.Join(result, "\n")
+}
+
 func Run() {
 	loadConfig()
 
@@ -1813,7 +1878,7 @@ func Run() {
 			fmt.Printf("\n⚠️ Process exited with error: %v\n", err)
 		}
 
-		outputStr := outBuf.String()
+		outputStr := sanitizePTYOutput(outBuf.String())
 
 		toolCallKeywords := []string{"Tool Call:", "Calling tool", "cmd", "grep_search", "view_file", "replace_file_content"}
 		toolCount := 0
@@ -2061,8 +2126,14 @@ func Run() {
 	case "internal-watch-copilot":
 		watchCopilot()
 
+	case "internal-watch-copilot-cli":
+		watchCopilotCLI()
+
 	case "internal-watch-gemini":
 		watchGemini()
+
+	case "internal-watch-aider":
+		watchAider()
 
 	case "internal-detect-gemini":
 		detectGeminiModel()
@@ -2076,6 +2147,9 @@ func Run() {
 			return
 		}
 		syncOpenRouterPricing(os.Args[3:])
+
+	case "update-pricing":
+		syncOpenRouterPricing(os.Args[2:])
 
 	case "info":
 		fmt.Printf("AgentTrack Global CLI\n")
@@ -2105,7 +2179,7 @@ func Run() {
 		}
 
 	case "export":
-		format := "md"
+		format := "csv"
 		if len(os.Args) > 2 {
 			format = os.Args[2]
 		}
@@ -2749,8 +2823,8 @@ func exportLogs(format string) {
 
 	format = strings.ToLower(format)
 	if format != "md" && format != "csv" && format != "json" {
-		fmt.Printf("Format '%s' not supported yet. Using 'md'.\n", format)
-		format = "md"
+		fmt.Printf("Format '%s' not supported yet. Using 'csv'.\n", format)
+		format = "csv"
 	}
 
 	filename := fmt.Sprintf("atrack_export_%s.%s", time.Now().Format("20060102_150405"), format)
@@ -2900,4 +2974,19 @@ func printFullUsage() {
 	printUsageItem(`atrack version`, "Show app version")
 	printUsageItem(`atrack clear`, "Wipe all log data")
 	fmt.Println()
+}
+
+func getGitContext(workspace string) (branch, root string) {
+	cmdBranch := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmdBranch.Dir = workspace
+	if out, err := cmdBranch.Output(); err == nil {
+		branch = strings.TrimSpace(string(out))
+	}
+
+	cmdRoot := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmdRoot.Dir = workspace
+	if out, err := cmdRoot.Output(); err == nil {
+		root = strings.TrimSpace(string(out))
+	}
+	return
 }

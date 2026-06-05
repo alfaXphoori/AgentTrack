@@ -29,8 +29,9 @@ type autoStartManager struct {
 func newAutoStartManager() *autoStartManager {
 	return &autoStartManager{
 		watchers: map[string]*managedWatcher{
-			"internal-watch-gemini":  {command: "internal-watch-gemini"},
-			"internal-watch-copilot": {command: "internal-watch-copilot"},
+			"internal-watch-gemini":      {command: "internal-watch-gemini"},
+			"internal-watch-copilot":     {command: "internal-watch-copilot"},
+			"internal-watch-copilot-cli": {command: "internal-watch-copilot-cli"},
 		},
 	}
 }
@@ -131,6 +132,8 @@ func runAutoStartService() {
 		if config.AutoRun {
 			manager.ensureRunning("internal-watch-gemini")
 			manager.ensureRunning("internal-watch-copilot")
+			manager.ensureRunning("internal-watch-copilot-cli")
+			manager.ensureRunning("internal-watch-aider")
 		} else {
 			manager.stopAll()
 		}

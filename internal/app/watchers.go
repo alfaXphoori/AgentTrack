@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -250,6 +251,192 @@ func watchCopilot() {
 }
 
 // ---------------------------------------------------------------------------
+// Copilot CLI (GitHub Copilot terminal) Watcher
+// ---------------------------------------------------------------------------
+
+type copilotCLITurn struct {
+	question     string
+	answer       string
+	model        string
+	outputTokens int
+}
+
+func getCopilotCLILoggedCount(stateDir, sessionID string) int {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	data, err := os.ReadFile(stateFile)
+	if err == nil {
+		var count int
+		fmt.Sscanf(string(data), "%d", &count)
+		return count
+	}
+	return 0
+}
+
+func saveCopilotCLILoggedCount(stateDir, sessionID string, count int) {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", count)), 0644)
+}
+
+var copilotCLICleanRe = regexp.MustCompile(`(?s)<current_datetime>.*?</current_datetime>\s*|<system_reminder>.*?</system_reminder>\s*`)
+
+func cleanCopilotCLIUserMessage(content string) string {
+	return strings.TrimSpace(copilotCLICleanRe.ReplaceAllString(content, ""))
+}
+
+func parseCopilotCLITurns(filePath string) ([]copilotCLITurn, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var turns []copilotCLITurn
+	var currentQuestion string
+	var bestAnswer string
+	var bestModel string
+	var bestOutputTokens int
+	inTurn := false
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+
+	for scanner.Scan() {
+		var event map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		eventType, _ := event["type"].(string)
+		data, _ := event["data"].(map[string]interface{})
+		if data == nil {
+			continue
+		}
+
+		switch eventType {
+		case "user.message":
+			if inTurn && currentQuestion != "" && bestAnswer != "" {
+				turns = append(turns, copilotCLITurn{
+					question:     currentQuestion,
+					answer:       bestAnswer,
+					model:        bestModel,
+					outputTokens: bestOutputTokens,
+				})
+			}
+			rawContent, _ := data["content"].(string)
+			currentQuestion = cleanCopilotCLIUserMessage(rawContent)
+			bestAnswer = ""
+			bestModel = ""
+			bestOutputTokens = 0
+			inTurn = true
+
+		case "assistant.message":
+			content, _ := data["content"].(string)
+			if content == "" {
+				continue
+			}
+			model, _ := data["model"].(string)
+			outputTokens := 0
+			if ot, ok := data["outputTokens"].(float64); ok {
+				outputTokens = int(ot)
+			}
+			bestAnswer = content
+			if model != "" {
+				bestModel = model
+			}
+			if outputTokens > 0 {
+				bestOutputTokens = outputTokens
+			}
+		}
+	}
+
+	if inTurn && currentQuestion != "" && bestAnswer != "" {
+		turns = append(turns, copilotCLITurn{
+			question:     currentQuestion,
+			answer:       bestAnswer,
+			model:        bestModel,
+			outputTokens: bestOutputTokens,
+		})
+	}
+
+	return turns, scanner.Err()
+}
+
+func processCopilotCLIFile(filePath, sessionID, stateDir string) {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		if info, err := os.Stat(filePath); err == nil {
+			if time.Since(info.ModTime()) > 1*time.Minute {
+				turns, err := parseCopilotCLITurns(filePath)
+				if err == nil {
+					saveCopilotCLILoggedCount(stateDir, sessionID, len(turns))
+				}
+				return
+			}
+		}
+	}
+
+	turns, err := parseCopilotCLITurns(filePath)
+	if err != nil {
+		return
+	}
+
+	loggedCount := getCopilotCLILoggedCount(stateDir, sessionID)
+	if len(turns) <= loggedCount {
+		return
+	}
+
+	atrackBin, _ := os.Executable()
+
+	for i := loggedCount; i < len(turns); i++ {
+		turn := turns[i]
+		if turn.question == "" {
+			continue
+		}
+
+		model := turn.model
+		if model == "" {
+			model = "copilot-cli"
+		}
+
+		summary := turn.answer
+		if len(summary) > 100 {
+			summary = summary[:100]
+		}
+
+		tokensOut := fmt.Sprintf("%d", turn.outputTokens)
+		cmd := exec.Command(atrackBin, "auto", turn.question, summary, model, "0", tokensOut, "0", sessionID, "success", "", "copilot-cli,auto")
+		cmd.Run()
+		fmt.Printf("✅ Logged Copilot CLI: %.50s...\n", turn.question)
+	}
+
+	saveCopilotCLILoggedCount(stateDir, sessionID, len(turns))
+}
+
+func watchCopilotCLI() {
+	lockPath := filepath.Join(getAppDir(), "copilot_cli_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
+	fmt.Println("🔍 Starting Copilot CLI Watcher...")
+	homeDir, _ := os.UserHomeDir()
+	storagePath := filepath.Join(homeDir, ".copilot", "session-state")
+	stateDir := filepath.Join(homeDir, ".atrack", "copilot_cli_state")
+	os.MkdirAll(stateDir, 0755)
+
+	for {
+		matches, _ := filepath.Glob(filepath.Join(storagePath, "*", "events.jsonl"))
+		for _, f := range matches {
+			sessionID := filepath.Base(filepath.Dir(f))
+			processCopilotCLIFile(f, sessionID, stateDir)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Gemini Detect Model
 // ---------------------------------------------------------------------------
 
@@ -386,6 +573,25 @@ func PrimeWatchers() {
 		}
 	}
 
+	geminiBrain := filepath.Join(home, ".gemini", "antigravity-cli", "brain")
+	brainEntries, _ := os.ReadDir(geminiBrain)
+	for _, d := range brainEntries {
+		if !d.IsDir() {
+			continue
+		}
+		tPath := filepath.Join(geminiBrain, d.Name(), ".system_generated", "logs", "transcript.jsonl")
+		if _, err := os.Stat(tPath); err == nil {
+			pairs := countGeminiPairs(tPath)
+			dirParts := strings.Split(tPath, string(os.PathSeparator))
+			baseName := "transcript.jsonl"
+			if len(dirParts) >= 4 {
+				baseName = "transcript_" + dirParts[len(dirParts)-4] + ".jsonl"
+			}
+			stateFile := filepath.Join(stateDir, baseName+".logged")
+			os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", pairs)), 0644)
+		}
+	}
+
 	// 2. Prime Copilot
 	var storagePath string
 	switch runtime.GOOS {
@@ -409,6 +615,20 @@ func PrimeWatchers() {
 		sessionID, requests := scanCopilotFile(f)
 		if sessionID != "" {
 			saveCopilotLoggedCount(copilotStateDir, sessionID, len(requests))
+		}
+	}
+
+	// 3. Prime Copilot CLI
+	copilotCLIStateDir := filepath.Join(home, ".atrack", "copilot_cli_state")
+	os.MkdirAll(copilotCLIStateDir, 0755)
+
+	copilotCLIStorage := filepath.Join(home, ".copilot", "session-state")
+	copilotCLIMatches, _ := filepath.Glob(filepath.Join(copilotCLIStorage, "*", "events.jsonl"))
+	for _, f := range copilotCLIMatches {
+		sessionID := filepath.Base(filepath.Dir(f))
+		turns, err := parseCopilotCLITurns(f)
+		if err == nil {
+			saveCopilotCLILoggedCount(copilotCLIStateDir, sessionID, len(turns))
 		}
 	}
 
@@ -497,6 +717,12 @@ func countGeminiPairs(filePath string) int {
 			continue
 		}
 		typ, _ := d["type"].(string)
+		source, _ := d["source"].(string)
+		if source == "USER_EXPLICIT" {
+			typ = "user"
+		} else if source == "MODEL" {
+			typ = "gemini"
+		}
 		if typ == "user" || typ == "gemini" {
 			text := ""
 			if contentStr, ok := d["content"].(string); ok {
@@ -558,7 +784,14 @@ func processGeminiSession(filePath, stateDir string) {
 	}
 	defer file.Close()
 
-	stateFile := filepath.Join(stateDir, filepath.Base(filePath)+".logged")
+	baseName := filepath.Base(filePath)
+	if baseName == "transcript.jsonl" {
+		dirParts := strings.Split(filePath, string(os.PathSeparator))
+		if len(dirParts) >= 4 {
+			baseName = "transcript_" + dirParts[len(dirParts)-4] + ".jsonl"
+		}
+	}
+	stateFile := filepath.Join(stateDir, baseName+".logged")
 	loggedPairs := 0
 	if data, err := os.ReadFile(stateFile); err == nil {
 		fmt.Sscanf(string(data), "%d", &loggedPairs)
@@ -577,6 +810,7 @@ func processGeminiSession(filePath, stateDir string) {
 
 	var turns []geminiTurn
 	sessionID := ""
+	agyModel := "agy"
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -593,9 +827,34 @@ func processGeminiSession(filePath, stateDir string) {
 		typ, _ := d["type"].(string)
 		model, _ := d["model"].(string)
 		tsStr, _ := d["timestamp"].(string)
+
+		source, _ := d["source"].(string)
+		if source == "USER_EXPLICIT" {
+			typ = "user"
+		} else if source == "MODEL" {
+			typ = "gemini"
+		}
+		if model == "" && source == "MODEL" {
+			model = agyModel
+		}
+		if tsStr == "" {
+			if ca, ok := d["created_at"].(string); ok {
+				tsStr = ca
+			}
+		}
+
 		var tools []string
 
 		if toolCalls, ok := d["toolCalls"].([]interface{}); ok {
+			for _, call := range toolCalls {
+				if c, ok := call.(map[string]interface{}); ok {
+					if name, ok := c["name"].(string); ok {
+						tools = append(tools, name)
+					}
+				}
+			}
+		}
+		if toolCalls, ok := d["tool_calls"].([]interface{}); ok {
 			for _, call := range toolCalls {
 				if c, ok := call.(map[string]interface{}); ok {
 					if name, ok := c["name"].(string); ok {
@@ -619,7 +878,30 @@ func processGeminiSession(filePath, stateDir string) {
 				}
 			}
 
+			// Do not treat tool execution outputs as the actual AI conversation answer
+			if typ == "gemini" && strings.HasPrefix(strings.TrimSpace(text), "Created At:") {
+				text = ""
+			}
+
+
 			if strings.TrimSpace(text) != "" || len(tools) > 0 {
+				if typ == "user" {
+					if strings.Contains(text, "USER_SETTINGS_CHANGE") {
+						re := regexp.MustCompile("The user changed setting `Model Selection` from .*? to ([A-Za-z0-9 .()]+)\\. No need to comment")
+						matches := re.FindStringSubmatch(text)
+						if len(matches) > 1 {
+							agyModel = strings.TrimSpace(matches[1])
+						}
+					}
+					// Clean up XML tags injected by Antigravity CLI
+					if strings.Contains(text, "<USER_REQUEST>") {
+						reqRe := regexp.MustCompile(`(?s)<USER_REQUEST>\n*(.*?)\n*</USER_REQUEST>`)
+						matches := reqRe.FindStringSubmatch(text)
+						if len(matches) > 1 {
+							text = matches[1]
+						}
+					}
+				}
 				turns = append(turns, geminiTurn{
 					Type:  typ,
 					Text:  strings.TrimSpace(text),
@@ -790,26 +1072,165 @@ func watchGemini() {
 	fmt.Println("🔍 AgentTrack Gemini Watcher started (Go Native)")
 	homeDir, _ := os.UserHomeDir()
 	geminiTmp := filepath.Join(homeDir, ".gemini", "tmp")
+	geminiBrain := filepath.Join(homeDir, ".gemini", "antigravity-cli", "brain")
 	stateDir := filepath.Join(homeDir, ".atrack", "watch_state")
 	os.MkdirAll(stateDir, 0755)
 
 	if _, err := os.Stat(geminiTmp); os.IsNotExist(err) {
-		fmt.Println("❌ ~/.gemini/tmp not found. Open gemini in any project first.")
-		os.Exit(1)
+		if _, err2 := os.Stat(geminiBrain); os.IsNotExist(err2) {
+			fmt.Println("❌ ~/.gemini/tmp and ~/.gemini/antigravity-cli not found. Open gemini in any project first.")
+			os.Exit(1)
+		}
 	}
 
 	for {
-		dirs, _ := os.ReadDir(geminiTmp)
-		for _, d := range dirs {
-			if !d.IsDir() {
-				continue
-			}
-			chatsDir := filepath.Join(geminiTmp, d.Name(), "chats")
-			sessions, _ := filepath.Glob(filepath.Join(chatsDir, "session-*.jsonl"))
-			for _, s := range sessions {
-				processGeminiSession(s, stateDir)
+		var allSessions []string
+
+		if dirs, err := os.ReadDir(geminiTmp); err == nil {
+			for _, d := range dirs {
+				if !d.IsDir() {
+					continue
+				}
+				chatsDir := filepath.Join(geminiTmp, d.Name(), "chats")
+				sessions, _ := filepath.Glob(filepath.Join(chatsDir, "session-*.jsonl"))
+				allSessions = append(allSessions, sessions...)
 			}
 		}
+
+		if brainDirs, err := os.ReadDir(geminiBrain); err == nil {
+			for _, d := range brainDirs {
+				if !d.IsDir() {
+					continue
+				}
+				tPath := filepath.Join(geminiBrain, d.Name(), ".system_generated", "logs", "transcript.jsonl")
+				if _, err := os.Stat(tPath); err == nil {
+					allSessions = append(allSessions, tPath)
+				}
+			}
+		}
+
+		for _, s := range allSessions {
+			processGeminiSession(s, stateDir)
+		}
+		
 		time.Sleep(2 * time.Second)
+	}
+}
+
+func countAiderPairs(filePath string) int {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0
+	}
+	content := string(data)
+	return strings.Count(content, "> ASSISTANT:")
+}
+
+func processAiderFile(filePath string, stateDir string, workspace string) {
+	stateFile := filepath.Join(stateDir, fmt.Sprintf("%x.logged", filePath))
+	
+	loggedPairs := 0
+	if data, err := os.ReadFile(stateFile); err == nil {
+		fmt.Sscanf(string(data), "%d", &loggedPairs)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	content := string(data)
+	
+	parts := strings.Split(content, "> USER:")
+	var pairs []struct{ Q, A string }
+	
+	for i := 1; i < len(parts); i++ {
+		p := parts[i]
+		idx := strings.Index(p, "> ASSISTANT:")
+		if idx == -1 {
+			continue // No assistant reply yet
+		}
+		q := strings.TrimSpace(p[:idx])
+		a := strings.TrimSpace(p[idx+len("> ASSISTANT:"):])
+		
+		// strip out the next chat session if there is one
+		if chatIdx := strings.Index(a, "# aider chat started at"); chatIdx != -1 {
+			a = strings.TrimSpace(a[:chatIdx])
+		}
+		
+		pairs = append(pairs, struct{ Q, A string }{Q: q, A: a})
+	}
+	
+	for idx := loggedPairs; idx < len(pairs); idx++ {
+		p := pairs[idx]
+		
+		ti := estimateTokens(p.Q)
+		to := estimateTokens(p.A)
+		
+		summary := strings.TrimSpace(p.A)
+		if lines := strings.Split(summary, "\n"); len(lines) > 0 {
+			summary = strings.TrimSpace(lines[0])
+		}
+		if len(summary) > 150 {
+			summary = summary[:150]
+		}
+		
+		entry := LogEntry{
+			Category:    "AutoLog",
+			Question:    p.Q,
+			Answer:      summary,
+			Model:       "aider", // We don't easily know the exact model from the md without more parsing
+			TokensIn:    ti,
+			TokensOut:   to,
+			IsEstimated: true,
+			Workspace:   workspace,
+			Status:      "success",
+			Tags:        []string{"aider"},
+		}
+		
+		loadConfig()
+		if cost, ok := calculateLogCost(entry); ok {
+			entry.Cost = cost
+		}
+		addLog(entry)
+		fmt.Printf("✅ [aider] %s\n", entry.Question)
+	}
+	
+	os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", len(pairs))), 0644)
+}
+
+func watchAider() {
+	lockPath := filepath.Join(getAppDir(), "aider_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
+	fmt.Println("🔍 Starting Aider Watcher (Go Native)...")
+	homeDir, _ := os.UserHomeDir()
+	stateDir := filepath.Join(homeDir, ".atrack", "aider_state")
+	os.MkdirAll(stateDir, 0755)
+
+	for {
+		// Collect unique workspaces from existing logs
+		logs := getLogsFromAllFiles()
+		workspaces := make(map[string]bool)
+		for _, l := range logs {
+			if l.Workspace != "" {
+				workspaces[l.Workspace] = true
+			}
+		}
+		// Also add current working directory
+		cwd, _ := os.Getwd()
+		workspaces[cwd] = true
+
+		for ws := range workspaces {
+			historyFile := filepath.Join(ws, ".aider.chat.history.md")
+			if _, err := os.Stat(historyFile); err == nil {
+				processAiderFile(historyFile, stateDir, ws)
+			}
+		}
+		time.Sleep(5 * time.Second)
 	}
 }
