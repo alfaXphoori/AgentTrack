@@ -17,6 +17,8 @@ import (
 	"github.com/gofrs/flock"
 )
 
+var watcherStartTime = time.Now()
+
 // ---------------------------------------------------------------------------
 // VS Code Copilot Watcher
 // ---------------------------------------------------------------------------
@@ -135,9 +137,9 @@ func processCopilotFile(filePath, stateDir string) {
 	stateFile := filepath.Join(stateDir, sessionID+".logged")
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		// First time seeing this session file!
-		// If the file is old (modified > 1 min ago), ignore its history.
+		// If the file was not modified since the watcher started, ignore its history.
 		if info, err := os.Stat(filePath); err == nil {
-			if time.Since(info.ModTime()) > 1*time.Minute {
+			if info.ModTime().Before(watcherStartTime) {
 				saveCopilotLoggedCount(stateDir, sessionID, len(requests))
 				return
 			}
@@ -279,8 +281,40 @@ func saveCopilotCLILoggedCount(stateDir, sessionID string, count int) {
 
 var copilotCLICleanRe = regexp.MustCompile(`(?s)<current_datetime>.*?</current_datetime>\s*|<system_reminder>.*?</system_reminder>\s*`)
 
+// spinnerDefiniteRe matches lines with unambiguous spinner characters
+var spinnerDefiniteRe = regexp.MustCompile(`(?m)^[ \t]*[◎○◉].*\n?`)
+
+// spinnerCancelRe matches 'esc cancel' lines
+var spinnerCancelRe = regexp.MustCompile(`(?m)^[ \t]*●.*esc cancel.*\n?`)
+
+// spinnerBulletRe removes '●' lines that are just progress words like "Working" or "Work" or backspaces
+var spinnerBulletRe = regexp.MustCompile(`(?m)^[ \t]*●[ \t\x08]*(Working|Worki|Work|Wor|Wo|W|ng|g|ad|al|au|a)?[ \t\x08]*\n?`)
+
+// copilotStartupRe matches the Copilot CLI ASCII art startup block through "Check for mistakes."
+var copilotStartupRe = regexp.MustCompile(`(?s)[\\╭╮╰╯│█▘▝▔]{2,}.*?Check for mistakes\.\s*`)
+
 func cleanCopilotCLIUserMessage(content string) string {
 	return strings.TrimSpace(copilotCLICleanRe.ReplaceAllString(content, ""))
+}
+
+func cleanCopilotCLIAssistantMessage(content string) string {
+	// Normalize line endings to help match interactive overwrites
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\r", "\n")
+
+	// Remove Copilot CLI startup ASCII art block
+	content = copilotStartupRe.ReplaceAllString(content, "")
+	
+	// Remove spinner/progress lines
+	content = spinnerDefiniteRe.ReplaceAllString(content, "")
+	content = spinnerCancelRe.ReplaceAllString(content, "")
+	content = spinnerBulletRe.ReplaceAllString(content, "")
+	
+	// Collapse excessive blank lines
+	multiBlank := regexp.MustCompile(`\n{3,}`)
+	content = multiBlank.ReplaceAllString(content, "\n\n")
+	
+	return strings.TrimSpace(content)
 }
 
 func parseCopilotCLITurns(filePath string) ([]copilotCLITurn, error) {
@@ -333,6 +367,10 @@ func parseCopilotCLITurns(filePath string) ([]copilotCLITurn, error) {
 			if content == "" {
 				continue
 			}
+			content = cleanCopilotCLIAssistantMessage(content)
+			if content == "" {
+				continue
+			}
 			model, _ := data["model"].(string)
 			outputTokens := 0
 			if ot, ok := data["outputTokens"].(float64); ok {
@@ -364,7 +402,7 @@ func processCopilotCLIFile(filePath, sessionID, stateDir string) {
 	stateFile := filepath.Join(stateDir, sessionID+".logged")
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		if info, err := os.Stat(filePath); err == nil {
-			if time.Since(info.ModTime()) > 1*time.Minute {
+			if info.ModTime().Before(watcherStartTime) {
 				turns, err := parseCopilotCLITurns(filePath)
 				if err == nil {
 					saveCopilotCLILoggedCount(stateDir, sessionID, len(turns))
@@ -626,9 +664,52 @@ func PrimeWatchers() {
 	copilotCLIMatches, _ := filepath.Glob(filepath.Join(copilotCLIStorage, "*", "events.jsonl"))
 	for _, f := range copilotCLIMatches {
 		sessionID := filepath.Base(filepath.Dir(f))
+		if info, err := os.Stat(f); err == nil {
+			if time.Since(info.ModTime()) < 2*time.Minute {
+				continue
+			}
+		}
 		turns, err := parseCopilotCLITurns(f)
 		if err == nil {
 			saveCopilotCLILoggedCount(copilotCLIStateDir, sessionID, len(turns))
+		}
+	}
+
+	// 4. Prime Claude CLI
+	claudeCLIStateDir := filepath.Join(home, ".atrack", "claude_cli_state")
+	os.MkdirAll(claudeCLIStateDir, 0755)
+
+	claudeCLIStorage := filepath.Join(home, ".claude", "projects")
+	claudeCLIMatches, _ := filepath.Glob(filepath.Join(claudeCLIStorage, "*", "*.jsonl"))
+	for _, f := range claudeCLIMatches {
+		sessionID := strings.TrimSuffix(filepath.Base(f), ".jsonl")
+		if info, err := os.Stat(f); err == nil {
+			if time.Since(info.ModTime()) < 2*time.Minute {
+				continue
+			}
+		}
+		turns, err := parseClaudeTurns(f, true)
+		if err == nil {
+			saveClaudeLoggedCount(claudeCLIStateDir, sessionID, len(turns))
+		}
+	}
+
+	// 5. Prime Codex CLI
+	codexCLIStateDir := filepath.Join(home, ".atrack", "codex_cli_state")
+	os.MkdirAll(codexCLIStateDir, 0755)
+
+	codexCLIStorage := filepath.Join(home, ".codex", "sessions")
+	codexCLIMatches, _ := filepath.Glob(filepath.Join(codexCLIStorage, "*", "*", "*", "rollout-*.jsonl"))
+	for _, f := range codexCLIMatches {
+		sessionID := strings.TrimSuffix(filepath.Base(f), ".jsonl")
+		if info, err := os.Stat(f); err == nil {
+			if time.Since(info.ModTime()) < 2*time.Minute {
+				continue
+			}
+		}
+		turns, err := parseCodexTurns(f, true)
+		if err == nil {
+			saveCodexLoggedCount(codexCLIStateDir, sessionID, len(turns))
 		}
 	}
 
@@ -1230,6 +1311,433 @@ func watchAider() {
 			if _, err := os.Stat(historyFile); err == nil {
 				processAiderFile(historyFile, stateDir, ws)
 			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Claude CLI Watcher
+// ---------------------------------------------------------------------------
+
+type claudeTurn struct {
+	question     string
+	answer       string
+	model        string
+	outputTokens int
+}
+
+func getClaudeLoggedCount(stateDir, sessionID string) int {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	data, err := os.ReadFile(stateFile)
+	if err == nil {
+		var count int
+		fmt.Sscanf(string(data), "%d", &count)
+		return count
+	}
+	return 0
+}
+
+func saveClaudeLoggedCount(stateDir, sessionID string, count int) {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", count)), 0644)
+}
+
+func parseClaudeTurns(filePath string, isOld bool) ([]claudeTurn, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var turns []claudeTurn
+	var currentQuestion string
+	var currentAnswer []string
+	var currentModel string
+	var currentTokens int
+	hasQuestion := false
+	turnFinished := false
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		var event map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		eventType, _ := event["type"].(string)
+		if eventType == "user" {
+			msg, _ := event["message"].(map[string]interface{})
+			if msg != nil {
+				content, ok := msg["content"].(string)
+				if ok {
+					if !isSystemClaudePrompt(content) {
+						if hasQuestion && (turnFinished || (isOld && len(currentAnswer) > 0)) && (len(currentAnswer) > 0 || currentTokens > 0) {
+							turns = append(turns, claudeTurn{
+								question:     currentQuestion,
+								answer:       strings.Join(currentAnswer, "\n"),
+								model:        currentModel,
+								outputTokens: currentTokens,
+							})
+						}
+						currentQuestion = content
+						currentAnswer = []string{}
+						currentModel = ""
+						currentTokens = 0
+						hasQuestion = true
+						turnFinished = false
+					}
+				}
+			}
+		} else if eventType == "assistant" {
+			msg, _ := event["message"].(map[string]interface{})
+			if msg != nil {
+				if model, ok := msg["model"].(string); ok && model != "" {
+					currentModel = model
+				}
+				if usage, ok := msg["usage"].(map[string]interface{}); ok {
+					if ot, ok := usage["output_tokens"].(float64); ok {
+						currentTokens = int(ot)
+					}
+				}
+				if content, ok := msg["content"].([]interface{}); ok {
+					for _, block := range content {
+						if blockMap, ok := block.(map[string]interface{}); ok {
+							if bType, ok := blockMap["type"].(string); ok && bType == "text" {
+								if text, ok := blockMap["text"].(string); ok && text != "" {
+									currentAnswer = append(currentAnswer, text)
+								}
+							}
+						}
+					}
+				}
+			}
+		} else if eventType == "system" {
+			subtype, _ := event["subtype"].(string)
+			if subtype == "turn_duration" {
+				turnFinished = true
+			}
+		}
+	}
+
+	if hasQuestion && (turnFinished || (isOld && len(currentAnswer) > 0)) && (len(currentAnswer) > 0 || currentTokens > 0) {
+		turns = append(turns, claudeTurn{
+			question:     currentQuestion,
+			answer:       strings.Join(currentAnswer, "\n"),
+			model:        currentModel,
+			outputTokens: currentTokens,
+		})
+	}
+
+	return turns, scanner.Err()
+}
+
+func isSystemClaudePrompt(content string) bool {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "<local-command-") ||
+		strings.HasPrefix(content, "<task-") ||
+		strings.HasPrefix(content, "<bash-") ||
+		strings.HasPrefix(content, "<command-") {
+		return true
+	}
+	return false
+}
+
+func processClaudeFile(filePath, sessionID, stateDir string) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return
+	}
+	isOld := time.Since(info.ModTime()) > 2*time.Minute
+
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		if info.ModTime().Before(watcherStartTime) {
+			turns, err := parseClaudeTurns(filePath, true)
+			if err == nil {
+				saveClaudeLoggedCount(stateDir, sessionID, len(turns))
+			}
+			return
+		}
+	}
+
+	turns, err := parseClaudeTurns(filePath, isOld)
+	if err != nil {
+		return
+	}
+
+	loggedCount := getClaudeLoggedCount(stateDir, sessionID)
+	if len(turns) <= loggedCount {
+		return
+	}
+
+	for i := loggedCount; i < len(turns); i++ {
+		turn := turns[i]
+		if turn.question == "" {
+			continue
+		}
+
+		model := turn.model
+		if model == "" {
+			model = "claude-cli"
+		}
+
+		summary := turn.answer
+		if len(summary) > 100 {
+			summary = summary[:100]
+		}
+
+		tIn := estimateTokens(turn.question)
+
+		entry := LogEntry{
+			Category:    "AutoLog",
+			Question:    turn.question,
+			Answer:      summary,
+			Model:       model,
+			TokensIn:    tIn,
+			TokensOut:   turn.outputTokens,
+			IsEstimated: false,
+			SessionID:   sessionID,
+			Status:      "success",
+			Tags:        []string{"claude-cli"},
+		}
+
+		loadConfig()
+		if cost, ok := calculateLogCost(entry); ok {
+			entry.Cost = cost
+		}
+		addLog(entry)
+		fmt.Printf("✅ Logged Claude CLI: %.50s...\n", turn.question)
+	}
+
+	saveClaudeLoggedCount(stateDir, sessionID, len(turns))
+}
+
+func watchClaude() {
+	lockPath := filepath.Join(getAppDir(), "claude_cli_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
+	fmt.Println("🔍 Starting Claude CLI Watcher...")
+	homeDir, _ := os.UserHomeDir()
+	storagePath := filepath.Join(homeDir, ".claude", "projects")
+	stateDir := filepath.Join(homeDir, ".atrack", "claude_cli_state")
+	os.MkdirAll(stateDir, 0755)
+
+	for {
+		matches, _ := filepath.Glob(filepath.Join(storagePath, "*", "*.jsonl"))
+		for _, f := range matches {
+			sessionID := strings.TrimSuffix(filepath.Base(f), ".jsonl")
+			processClaudeFile(f, sessionID, stateDir)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Codex CLI Watcher
+// ---------------------------------------------------------------------------
+
+type codexTurn struct {
+	question     string
+	answer       string
+	model        string
+	outputTokens int
+}
+
+func getCodexLoggedCount(stateDir, sessionID string) int {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return 0
+	}
+	var count int
+	fmt.Sscanf(string(data), "%d", &count)
+	return count
+}
+
+func saveCodexLoggedCount(stateDir, sessionID string, count int) {
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	_ = os.WriteFile(stateFile, []byte(fmt.Sprintf("%d", count)), 0644)
+}
+
+func parseCodexTurns(filePath string, isOld bool) ([]codexTurn, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var turns []codexTurn
+	var currentQuestion string
+	var currentAnswer []string
+	var currentModel string
+	var currentTokens int
+	hasQuestion := false
+	turnFinished := false
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		var event map[string]interface{}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		eventType, _ := event["type"].(string)
+		if eventType == "turn_context" {
+			payload, _ := event["payload"].(map[string]interface{})
+			if payload != nil {
+				if m, ok := payload["model"].(string); ok && m != "" {
+					currentModel = m
+				}
+			}
+		} else if eventType == "event_msg" {
+			payload, _ := event["payload"].(map[string]interface{})
+			if payload != nil {
+				payloadType, _ := payload["type"].(string)
+				if payloadType == "user_message" {
+					if hasQuestion && (turnFinished || (isOld && len(currentAnswer) > 0)) && (len(currentAnswer) > 0 || currentTokens > 0) {
+						turns = append(turns, codexTurn{
+							question:     currentQuestion,
+							answer:       strings.Join(currentAnswer, "\n"),
+							model:        currentModel,
+							outputTokens: currentTokens,
+						})
+					}
+					msg, _ := payload["message"].(string)
+					currentQuestion = msg
+					currentAnswer = []string{}
+					currentTokens = 0
+					hasQuestion = true
+					turnFinished = false
+				} else if payloadType == "agent_message" {
+					msg, _ := payload["message"].(string)
+					if msg != "" {
+						currentAnswer = append(currentAnswer, msg)
+					}
+				} else if payloadType == "token_count" {
+					if info, ok := payload["info"].(map[string]interface{}); ok {
+						if usage, ok := info["total_token_usage"].(map[string]interface{}); ok {
+							if ot, ok := usage["output_tokens"].(float64); ok {
+								currentTokens = int(ot)
+							}
+						}
+					}
+				} else if payloadType == "task_complete" {
+					turnFinished = true
+				}
+			}
+		}
+	}
+
+	if hasQuestion && (turnFinished || (isOld && len(currentAnswer) > 0)) && (len(currentAnswer) > 0 || currentTokens > 0) {
+		turns = append(turns, codexTurn{
+			question:     currentQuestion,
+			answer:       strings.Join(currentAnswer, "\n"),
+			model:        currentModel,
+			outputTokens: currentTokens,
+		})
+	}
+
+	return turns, scanner.Err()
+}
+
+func processCodexFile(filePath, sessionID, stateDir string) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return
+	}
+	isOld := time.Since(info.ModTime()) > 2*time.Minute
+
+	stateFile := filepath.Join(stateDir, sessionID+".logged")
+	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
+		if info.ModTime().Before(watcherStartTime) {
+			turns, err := parseCodexTurns(filePath, true)
+			if err == nil {
+				saveCodexLoggedCount(stateDir, sessionID, len(turns))
+			}
+			return
+		}
+	}
+
+	turns, err := parseCodexTurns(filePath, isOld)
+	if err != nil {
+		return
+	}
+
+	loggedCount := getCodexLoggedCount(stateDir, sessionID)
+	if len(turns) <= loggedCount {
+		return
+	}
+
+	for i := loggedCount; i < len(turns); i++ {
+		turn := turns[i]
+		if turn.question == "" {
+			continue
+		}
+
+		model := turn.model
+		if model == "" {
+			model = "codex-cli"
+		}
+
+		summary := turn.answer
+		if len(summary) > 100 {
+			summary = summary[:100]
+		}
+
+		tIn := estimateTokens(turn.question)
+
+		entry := LogEntry{
+			Category:    "AutoLog",
+			Question:    turn.question,
+			Answer:      summary,
+			Model:       model,
+			TokensIn:    tIn,
+			TokensOut:   turn.outputTokens,
+			IsEstimated: false,
+			SessionID:   sessionID,
+			Status:      "success",
+			Tags:        []string{"codex-cli"},
+		}
+
+		loadConfig()
+		if cost, ok := calculateLogCost(entry); ok {
+			entry.Cost = cost
+		}
+		addLog(entry)
+		fmt.Printf("✅ Logged Codex CLI: %.50s...\n", turn.question)
+	}
+
+	saveCodexLoggedCount(stateDir, sessionID, len(turns))
+}
+
+func watchCodex() {
+	lockPath := filepath.Join(getAppDir(), "codex_cli_watcher.lock")
+	fileLock := flock.New(lockPath)
+	locked, err := fileLock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer fileLock.Unlock()
+
+	fmt.Println("🔍 Starting Codex CLI Watcher...")
+	homeDir, _ := os.UserHomeDir()
+	storagePath := filepath.Join(homeDir, ".codex", "sessions")
+	stateDir := filepath.Join(homeDir, ".atrack", "codex_cli_state")
+	os.MkdirAll(stateDir, 0755)
+
+	for {
+		matches, _ := filepath.Glob(filepath.Join(storagePath, "*", "*", "*", "rollout-*.jsonl"))
+		for _, f := range matches {
+			sessionID := strings.TrimSuffix(filepath.Base(f), ".jsonl")
+			processCodexFile(f, sessionID, stateDir)
 		}
 		time.Sleep(5 * time.Second)
 	}

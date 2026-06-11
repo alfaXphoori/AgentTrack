@@ -51,6 +51,7 @@ func runDashboard() {
 	tabProjects, updateProjects := createProjectsTab()
 	tabHeatmap, updateHeatmap := createHeatmapTab()
 	tabSearch := createSearchTab(app)
+	tabTags, updateTags := createTagsTab()
 	tabSettings := createSettingsTab(app, restoreDashboard)
 
 	infoPages.AddPage("Overview", tabOverview, true, true)
@@ -61,10 +62,11 @@ func runDashboard() {
 	infoPages.AddPage("Cost", tabCost, true, false)
 	infoPages.AddPage("Projects", tabProjects, true, false)
 	infoPages.AddPage("Search", tabSearch, true, false)
+	infoPages.AddPage("Tags", tabTags, true, false)
 	infoPages.AddPage("Settings", tabSettings, true, false)
 
 	// Create the tab text
-	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Heatmap", "Cost", "Projects", "Search", "Settings"}
+	tabs := []string{"Overview", "Logs", "Stats", "Trends", "Heatmap", "Cost", "Projects", "Tags", "Search", "Settings"}
 	updateTabBar := func(activeTab string) {
 		tabBar.Clear()
 		for i, tab := range tabs {
@@ -111,6 +113,8 @@ func runDashboard() {
 						updateCost()
 					case "Projects":
 						updateProjects()
+					case "Tags":
+						updateTags()
 					}
 				})
 			}
@@ -1288,4 +1292,55 @@ func createProjectsTab() (tview.Primitive, func()) {
 
 	updateFunc()
 	return tview.NewFrame(table).SetBorders(0, 0, 0, 0, 0, 0), updateFunc
+}
+
+func createTagsTab() (tview.Primitive, func()) {
+	chartView := tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	chartView.SetBorder(true).SetTitle(" Tag Analytics ")
+
+	updateFunc := func() {
+		logs := getLogsFromAllFiles()
+		tagCounts := make(map[string]int)
+		for _, l := range logs {
+			for _, t := range l.Tags {
+				tagCounts[t]++
+			}
+		}
+
+		chartView.Clear()
+		if len(tagCounts) == 0 {
+			fmt.Fprintf(chartView, "\n  [gray]No tags used yet.[white]")
+			return
+		}
+
+		type kv struct {
+			k string
+			v int
+		}
+		var sorted []kv
+		for k, v := range tagCounts {
+			sorted = append(sorted, kv{k, v})
+		}
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+
+		maxVal := 0
+		for _, item := range sorted {
+			if item.v > maxVal {
+				maxVal = item.v
+			}
+		}
+
+		fmt.Fprintf(chartView, "\n [yellow]Top Tags Usage Bar Chart[white]\n\n")
+		for i, item := range sorted {
+			if i > 20 {
+				break // Only show top 20
+			}
+			barLen := int(float64(item.v) / float64(maxVal) * 40.0)
+			bar := strings.Repeat("█", maxVal)
+			if barLen < len(bar) { bar = strings.Repeat("█", barLen) }
+			fmt.Fprintf(chartView, " %-15s | [cyan]%s[white] (%d)\n", item.k, bar, item.v)
+		}
+	}
+	updateFunc()
+	return chartView, updateFunc
 }

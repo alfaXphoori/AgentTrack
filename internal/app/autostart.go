@@ -32,20 +32,39 @@ func newAutoStartManager() *autoStartManager {
 			"internal-watch-gemini":      {command: "internal-watch-gemini"},
 			"internal-watch-copilot":     {command: "internal-watch-copilot"},
 			"internal-watch-copilot-cli": {command: "internal-watch-copilot-cli"},
+			"internal-watch-aider":       {command: "internal-watch-aider"},
+			"internal-watch-claude":      {command: "internal-watch-claude"},
+			"internal-watch-codex":       {command: "internal-watch-codex"},
 		},
 	}
 }
 
 func shouldStartWatcher(command string) bool {
-	if command != "internal-watch-gemini" {
-		return true
+	if command == "internal-watch-gemini" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(filepath.Join(home, ".gemini", "tmp"))
+		return err == nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
+	if command == "internal-watch-claude" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(filepath.Join(home, ".claude"))
+		return err == nil
 	}
-	_, err = os.Stat(filepath.Join(home, ".gemini", "tmp"))
-	return err == nil
+	if command == "internal-watch-codex" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(filepath.Join(home, ".codex"))
+		return err == nil
+	}
+	return true
 }
 
 func (m *autoStartManager) ensureRunning(command string) {
@@ -134,6 +153,8 @@ func runAutoStartService() {
 			manager.ensureRunning("internal-watch-copilot")
 			manager.ensureRunning("internal-watch-copilot-cli")
 			manager.ensureRunning("internal-watch-aider")
+			manager.ensureRunning("internal-watch-claude")
+			manager.ensureRunning("internal-watch-codex")
 		} else {
 			manager.stopAll()
 		}

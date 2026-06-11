@@ -3,7 +3,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.16.2-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.17.0-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
@@ -16,6 +16,15 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 </div>
 
 ---
+
+## ✨ What's New in v0.17.0
+- **Git Context Logging:** Automatically capture `GitBranch` and `GitRoot` contexts for every AI interaction via native Git parsing.
+- **Aider Watcher Daemon:** Natively monitor `.aider.chat.history.md` for AI interactions seamlessly in the background.
+- **Real Tokenizer Engine:** Integrated `tiktoken-go` for 100% accurate token counting using the OpenAI `cl100k_base` standard.
+- **Auto-update Pricing:** Added `atrack update-pricing` to instantly sync the latest LLM API costs from OpenRouter.
+- **CSV Data Export:** `atrack export` now defaults to CSV format, making it effortless to analyze AI usage in Excel or BI tools.
+- **TUI Dashboard Analytics:** Added a new "Tags" tab in `atrack dashboard` featuring a sleek text-based bar chart for tag usage frequency.
+- **Smart Log Filtering:** Improved Antigravity & Gemini CLI watcher to automatically strip system XML tags and hide raw tool execution outputs for cleaner logs.
 
 ## ✨ What's New in v0.16.2
 - **Global Auto-Config:** Completely redesigned initialization to stop placing rule files in project directories. `atrack init` now automatically injects global logging rules directly into AI tools (Claude Code, Aider, Cline, Continue, Open Interpreter, Shell-GPT, etc.).

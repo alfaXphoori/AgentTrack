@@ -80,10 +80,10 @@ func TestTracker(t *testing.T) {
 	if _, err := runCmd("auto", "User Question", "AI Answer", "test-model", "10", "20"); err != nil {
 		t.Fatalf("Auto command failed: %v", err)
 	}
-	if _, err := runCmd("config", "set", "pricing.gemini-1.5-flash.input_per_1k", "0.10"); err != nil {
+	if _, err := runCmd("config", "set", "pricing.Gemini 3.1.input_per_1k", "0.10"); err != nil {
 		t.Fatalf("Config pricing input set failed: %v", err)
 	}
-	if _, err := runCmd("config", "set", "pricing.gemini-1.5-flash.output_per_1k", "0.20"); err != nil {
+	if _, err := runCmd("config", "set", "pricing.Gemini 3.1.output_per_1k", "0.20"); err != nil {
 		t.Fatalf("Config pricing output set failed: %v", err)
 	}
 	if _, err := runCmd("config", "set", "pricing.test-model.input_per_1k", "0.30"); err != nil {
@@ -138,7 +138,7 @@ func TestTracker(t *testing.T) {
 		t.Fatalf("List all models failed: %v (%s)", err, out)
 	}
 	if !strings.Contains(out, "Model") || !strings.Contains(out, "Count") || !strings.Contains(out, "Tokens") || !strings.Contains(out, "Cost") ||
-		!strings.Contains(out, "test-model") || !strings.Contains(out, "gemini-1.5-flash") ||
+		!strings.Contains(out, "test-model") || !strings.Contains(out, "Gemini 3.1") ||
 		strings.Contains(out, "User Question") || strings.Contains(out, "Test message") {
 		t.Fatalf("List all models output unexpected: %s", out)
 	}
@@ -205,14 +205,14 @@ func TestTracker(t *testing.T) {
 		w.Write([]byte(`{
 			"data": [
 				{"id": "openai/test-model", "pricing": {"prompt": "0.0005", "completion": "0.0007"}},
-				{"id": "google/gemini-1.5-flash", "pricing": {"prompt": "0.0001", "completion": "0.0002"}}
+				{"id": "google/Gemini 3.1", "pricing": {"prompt": "0.0001", "completion": "0.0002"}}
 			]
 		}`))
 	}))
 	defer server.Close()
 	openRouterURL = server.URL
 
-	out, err = runCmd("pricing", "sync", "test-model", "gemini-1.5-flash", "missing-model")
+	out, err = runCmd("pricing", "sync", "test-model", "Gemini 3.1", "missing-model")
 	if err != nil {
 		t.Fatalf("Pricing sync failed: %v (%s)", err, out)
 	}
@@ -228,11 +228,11 @@ func TestTracker(t *testing.T) {
 		t.Fatalf("Synced test-model price not saved: %s", out)
 	}
 
-	out, err = runCmd("config", "get", "pricing.gemini-1.5-flash.output_per_1k")
+	out, err = runCmd("config", "get", "pricing.Gemini 3.1.output_per_1k")
 	if err != nil {
 		t.Fatalf("Config get after gemini pricing sync failed: %v (%s)", err, out)
 	}
-	if !strings.Contains(out, "pricing.gemini-1.5-flash.output_per_1k = 0.2") {
+	if !strings.Contains(out, "pricing.Gemini 3.1.output_per_1k = 0.2") {
 		t.Fatalf("Synced gemini price not saved: %s", out)
 	}
 
@@ -248,7 +248,7 @@ func TestTracker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats model failed: %v (%s)", err, out)
 	}
-	if !strings.Contains(out, "test-model") || !strings.Contains(out, "gemini-1.5-flash") || !strings.Contains(out, "Cost") {
+	if !strings.Contains(out, "test-model") || !strings.Contains(out, "Gemini 3.1") || !strings.Contains(out, "Cost") {
 		t.Fatalf("Stats model output unexpected: %s", out)
 	}
 

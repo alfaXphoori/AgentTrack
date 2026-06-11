@@ -1903,6 +1903,11 @@ func Run() {
 			ToolsUsed:   []string{fmt.Sprintf("%d_detected", toolCount)},
 		}
 
+		if model == "copilot-cli" {
+			entry.Answer = "(Copilot Interactive Session - see AutoLog entries for details)"
+			entry.TokensOut = 0
+		}
+
 		addLog(entry)
 		fmt.Printf("\n✅ AgentTrack Telemetry Captured: %.2f seconds, %d tool calls estimated.\n", duration, toolCount)
 
@@ -2134,6 +2139,12 @@ func Run() {
 
 	case "internal-watch-aider":
 		watchAider()
+
+	case "internal-watch-claude":
+		watchClaude()
+
+	case "internal-watch-codex":
+		watchCodex()
 
 	case "internal-detect-gemini":
 		detectGeminiModel()
