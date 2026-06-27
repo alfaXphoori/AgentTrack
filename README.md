@@ -19,6 +19,7 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 
 ## ✨ What's New in v0.17.1
 - **Antigravity Real Billed Tokens:** Recover Antigravity's true per-request usage (input / output / cache) from its live `statusLine` hook — its session transcript records none. Point AgentTrack at a hook capture log via `ATRACK_AGY_HOOK_LOG` (default `~/agy_statusline_capture.jsonl`); matching sessions then report real billed tokens (tagged `billed:statusline-hook`) instead of a content-only estimate. Inert when no capture is present.
+- **One Rule, Cleanly Reversible:** `~/.atrack/rules.md` is the single source of truth for the logging rule. `atrack init` now records every config it injects across tools (Claude Code, Aider, Windsurf, Continue, Open Interpreter, Shell-GPT, Cline/Roo, Antigravity), so `atrack uninstall-rules` removes exactly what AgentTrack added — deleting only files it created and stripping only the keys it set, leaving your other settings untouched.
 
 ## ✨ What's New in v0.17.0
 - **Git Context Logging:** Automatically capture `GitBranch` and `GitRoot` contexts for every AI interaction via native Git parsing.

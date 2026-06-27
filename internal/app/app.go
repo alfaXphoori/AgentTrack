@@ -1620,11 +1620,13 @@ func autoConfigureClients(ruleContent string) {
 	if home == "" {
 		return
 	}
+	resetInstalledManifest()
 
 	// 1. Claude Code
 	cmd := exec.Command("claude", "config", "set", "--global", "customInstructions", ruleContent)
 	if err := cmd.Run(); err == nil {
 		fmt.Println("✅ [Claude Code] Auto-configured global custom instructions.")
+		recordRule("Claude Code", "claude_config", "", "customInstructions")
 	}
 
 	// 2. Aider
@@ -1636,12 +1638,14 @@ func autoConfigureClients(ruleContent string) {
 			f.WriteString("\nmessage: |\n" + indentString(ruleContent, "  ") + "\n")
 			f.Close()
 			fmt.Println("✅ [Aider] Appended AgentTrack instructions to ~/.aider.conf.yml.")
+			recordRule("Aider", "yaml_message", aiderPath, "")
 		} else {
 			fmt.Println("⚠️  [Aider] 'message:' already exists in ~/.aider.conf.yml. Please configure manually.")
 		}
 	} else if os.IsNotExist(err) {
 		os.WriteFile(aiderPath, []byte("message: |\n"+indentString(ruleContent, "  ")+"\n"), 0644)
 		fmt.Println("✅ [Aider] Created ~/.aider.conf.yml with AgentTrack instructions.")
+		recordRule("Aider", "file", aiderPath, "")
 	}
 
 	// 3. Windsurf
@@ -1649,6 +1653,7 @@ func autoConfigureClients(ruleContent string) {
 	if _, err := os.Stat(windsurfPath); os.IsNotExist(err) {
 		os.WriteFile(windsurfPath, []byte(ruleContent), 0644)
 		fmt.Println("✅ [Windsurf] Created ~/.windsurfrules.")
+		recordRule("Windsurf", "file", windsurfPath, "")
 	}
 
 	// 4. Continue.dev
@@ -1661,6 +1666,7 @@ func autoConfigureClients(ruleContent string) {
 				newData, _ := json.MarshalIndent(config, "", "  ")
 				os.WriteFile(continuePath, newData, 0644)
 				fmt.Println("✅ [Continue.dev] Injected systemMessage into ~/.continue/config.json.")
+				recordRule("Continue.dev", "json_key", continuePath, "systemMessage")
 			} else {
 				fmt.Println("⚠️  [Continue.dev] systemMessage already exists. Please configure manually.")
 			}
@@ -1679,6 +1685,7 @@ func autoConfigureClients(ruleContent string) {
 	if _, err := os.Stat(oiPath); os.IsNotExist(err) {
 		os.WriteFile(oiPath, []byte("system_message: |\n"+indentString(ruleContent, "  ")+"\n"), 0644)
 		fmt.Println("✅ [Open Interpreter] Created default profile at " + oiPath)
+		recordRule("Open Interpreter", "file", oiPath, "")
 	}
 
 	// 6. Shell-GPT (sgpt)
@@ -1692,6 +1699,7 @@ func autoConfigureClients(ruleContent string) {
 	if sgptData, err := json.MarshalIndent(sgptRole, "", "  "); err == nil {
 		os.WriteFile(sgptPath, sgptData, 0644)
 		fmt.Println("✅ [Shell-GPT] Created 'atrack' role. Use: sgpt --role atrack <prompt>")
+		recordRule("Shell-GPT", "file", sgptPath, "")
 	}
 
 	// 7. Cline / Roo Code
@@ -1722,6 +1730,7 @@ func autoConfigureClients(ruleContent string) {
 					newData, _ := json.MarshalIndent(config, "", "  ")
 					os.WriteFile(p, newData, 0644)
 					fmt.Printf("✅ [VS Code Ext] Injected custom instructions into %s\n", filepath.Base(filepath.Dir(p)))
+					recordRule("VS Code Ext ("+filepath.Base(filepath.Dir(p))+")", "json_key", p, "customInstructions")
 				}
 			}
 		}
@@ -1734,6 +1743,7 @@ func autoConfigureClients(ruleContent string) {
 	if _, err := os.Stat(geminiPath); os.IsNotExist(err) {
 		os.WriteFile(geminiPath, []byte(ruleContent), 0644)
 		fmt.Println("✅ [Antigravity] Added skill rule to ~/.gemini/config/skills/AgentTrack.md")
+		recordRule("Antigravity", "file", geminiPath, "")
 	}
 }
 
@@ -1774,7 +1784,8 @@ On every chat turn, you MUST execute this shell command to log the activity:
 	fmt.Println("👉 Codex / Copilot: Add the rule to your global GitHub Copilot CLI instructions.")
 	fmt.Println("👉 And more: Paste this rule into the system prompt setting of any other AI tool you use.")
 	fmt.Println("------------------------------------------------------------------")
-	fmt.Println("Project directories will no longer be cluttered with rule files!")
+	fmt.Printf("Single source of truth: edit %s — it is the one file to change.\n", rulesFile)
+	fmt.Println("Injected configs are tracked; run `atrack uninstall-rules` to cleanly remove them all.")
 }
 
 var ansiEscapeRegex = regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
@@ -2125,6 +2136,9 @@ func Run() {
 
 	case "init":
 		initRules()
+
+	case "uninstall-rules":
+		uninstallRules()
 
 	case "prime":
 		PrimeWatchers()
