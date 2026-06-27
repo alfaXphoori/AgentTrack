@@ -78,6 +78,7 @@ type LogEntry struct {
 	Model       string   `json:"model"`
 	TokensIn    int      `json:"tokens_in"`
 	TokensOut   int      `json:"tokens_out"`
+	CacheTokens int      `json:"cache_tokens,omitempty"` // billed cache read/creation tokens (when exposed)
 	IsEstimated bool     `json:"is_estimated"`
 	Duration    float64  `json:"duration,omitempty"`   // Time taken in seconds
 	SessionID   string   `json:"session_id,omitempty"` // Conversation thread identifier
@@ -105,7 +106,7 @@ type FilterOptions struct {
 }
 
 const (
-	Version     = "0.17.0"
+	Version     = "0.17.1"
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[31m"
 	ColorGreen  = "\033[32m"

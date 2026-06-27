@@ -3,7 +3,7 @@
 
 ### ⚡ AI Activity Tracker for the Terminal
 
-[![Version](https://img.shields.io/badge/version-0.17.0-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
+[![Version](https://img.shields.io/badge/version-0.17.1-blue?style=for-the-badge)](https://github.com/alfaXphoori/AgentTrack/releases)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=for-the-badge)](#-installation)
@@ -16,6 +16,9 @@ Token counts, costs, summaries, and a full TUI dashboard — all directly in you
 </div>
 
 ---
+
+## ✨ What's New in v0.17.1
+- **Antigravity Real Billed Tokens:** Recover Antigravity's true per-request usage (input / output / cache) from its live `statusLine` hook — its session transcript records none. Point AgentTrack at a hook capture log via `ATRACK_AGY_HOOK_LOG` (default `~/agy_statusline_capture.jsonl`); matching sessions then report real billed tokens (tagged `billed:statusline-hook`) instead of a content-only estimate. Inert when no capture is present.
 
 ## ✨ What's New in v0.17.0
 - **Git Context Logging:** Automatically capture `GitBranch` and `GitRoot` contexts for every AI interaction via native Git parsing.

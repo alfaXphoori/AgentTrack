@@ -1124,6 +1124,19 @@ func processGeminiSession(filePath, stateDir string) {
 			Tags:        []string{"gemini-cli"},
 		}
 
+		// Antigravity's transcript carries no billed usage; recover the real
+		// per-request input/output/cache from the statusLine hook capture if it
+		// was logged for this session. The hook's session_id equals the brain
+		// session directory name. No-op when no capture is present.
+		brainUUID := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filePath))))
+		if hu, ok := LookupAntigravityHookUsage(brainUUID); ok {
+			entry.TokensIn = hu.InputTokens
+			entry.TokensOut = hu.OutputTokens
+			entry.CacheTokens = hu.CacheReadTokens
+			entry.IsEstimated = false
+			entry.Tags = append(entry.Tags, "billed:statusline-hook")
+		}
+
 		loadConfig()
 		if cost, ok := calculateLogCost(entry); ok {
 			entry.Cost = cost
